@@ -21,6 +21,7 @@ import {
   ClipboardPen,
   Clock,
   Beaker,
+  Boxes,
 } from "@langfuse/icons";
 import { type ReactNode } from "react";
 import { type Entitlement } from "@/src/features/entitlements/constants/entitlements";
@@ -192,6 +193,15 @@ export const ROUTES: Route[] = [
     href: "/project/[projectId]/prompts",
     icon: FileJson,
     projectRbacScopes: ["prompts:read"],
+    productModule: "prompt-management",
+    group: RouteGroup.ContextManagement,
+    section: RouteSection.Main,
+  },
+  {
+    title: "Models",
+    href: "/project/[projectId]/models",
+    icon: Boxes,
+    projectRbacScopes: ["models:read", "prompts:read"],
     productModule: "prompt-management",
     group: RouteGroup.ContextManagement,
     section: RouteSection.Main,

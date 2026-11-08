@@ -16,7 +16,10 @@ import {
   PROMPT_LABEL_REGEX,
   PROMPT_LABEL_REGEX_ERROR,
 } from "./constants";
-import { PromptChatMessageSchema } from "../../server/llm/types";
+import {
+  PromptChatMessageSchema,
+  ZodModelConfig,
+} from "../../server/llm/types";
 import { PromptNameSchema } from "./validation";
 
 export const SingleChatMessageSchema = PromptChatMessageSchema;
@@ -71,13 +74,20 @@ export const CreatePromptSchema = z.union([
 
 export type CreatePromptType = z.infer<typeof CreatePromptSchema>;
 
+// The model a prompt version runs on is not part of the public prompt contract
+// yet, so it is accepted on the TRPC routes only.
+const PromptModelTRPCSchema = z.object({
+  registryModelId: z.string().nullish(),
+  modelParams: ZodModelConfig.nullish(),
+});
+
 // TRPC route requires projectId
 const CreateTextPromptTRPCSchema = CreateTextPromptSchema.extend({
   projectId: z.string(),
-});
+}).extend(PromptModelTRPCSchema.shape);
 const CreateChatPromptTRPCSchema = CreateChatPromptSchema.extend({
   projectId: z.string(),
-});
+}).extend(PromptModelTRPCSchema.shape);
 export const CreatePromptTRPCSchema = z.union([
   CreateTextPromptTRPCSchema,
   CreateChatPromptTRPCSchema,
@@ -155,8 +165,12 @@ export const TextPromptSchema = BaseTextPromptSchema.extend({
   commitMessage: z.string().max(COMMIT_MESSAGE_MAX_LENGTH).nullish(),
 });
 
+// Compared against the database row without the model columns, which the
+// public prompt schemas do not expose.
+type PublicPromptColumns = Omit<Prompt, "registryModelId" | "modelParams">;
+
 export type TextPromptType =
-  z.infer<typeof TextPromptSchema> extends Prompt
+  z.infer<typeof TextPromptSchema> extends PublicPromptColumns
     ? z.infer<typeof TextPromptSchema>
     : never;
 
@@ -182,7 +196,7 @@ export const ChatPromptSchema = BaseChatPromptSchema.extend({
 });
 
 export type ChatPromptType =
-  z.infer<typeof ChatPromptSchema> extends Prompt
+  z.infer<typeof ChatPromptSchema> extends PublicPromptColumns
     ? z.infer<typeof ChatPromptSchema>
     : never;
 

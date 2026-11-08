@@ -29,6 +29,8 @@ describe("PromptService", () => {
     config: {},
     tags: [],
     commitMessage: null,
+    registryModelId: null,
+    modelParams: null,
     resolutionGraph: null,
   };
 

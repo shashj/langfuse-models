@@ -9,12 +9,27 @@ import {
   PromptType,
 } from "@langfuse/shared";
 
+const optionalNumberText = z
+  .string()
+  .trim()
+  .refine((v) => v === "" || Number.isFinite(Number(v)), "Enter a number")
+  .optional();
+const optionalWholeNumberText = z
+  .string()
+  .trim()
+  .refine((v) => v === "" || /^[1-9]\d*$/.test(v), "Enter a whole number")
+  .optional();
+
 const NewPromptBaseSchema = z.object({
   name: PromptNameSchema,
   isActive: z.boolean({
     error: "Enter whether the prompt should go live",
   }),
   config: z.string().refine(validateJson, "Config needs to be valid JSON"),
+  registryModelId: z.string().optional(),
+  modelTemperature: optionalNumberText,
+  modelTopP: optionalNumberText,
+  modelMaxTokens: optionalWholeNumberText,
   commitMessage: z
     .string()
     .trim()

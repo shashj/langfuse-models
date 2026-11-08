@@ -69,6 +69,19 @@ const isPromptVersionConflict = (error: unknown): boolean => {
   );
 };
 
+// Prisma needs an explicit marker to write SQL NULL into a Json column.
+const withNullableModelParams = <
+  T extends { modelParams: Prisma.JsonValue | null },
+>(
+  row: T,
+) => ({
+  ...row,
+  modelParams:
+    row.modelParams === null
+      ? Prisma.DbNull
+      : (row.modelParams as Prisma.InputJsonValue),
+});
+
 const extractChatVariableAndPlaceholderNames = (
   chatPrompt: Array<any>,
 ): { variables: string[]; placeholders: string[] } => {
@@ -98,6 +111,8 @@ export const createPrompt = async ({
   type = PromptType.Text,
   labels = [],
   config,
+  registryModelId,
+  modelParams,
   createdBy,
   prisma,
   tags,
@@ -119,6 +134,16 @@ export const createPrompt = async ({
     throw new InvalidRequestError(
       "Previous versions have different prompt type. Create a new prompt with a different name.",
     );
+  }
+
+  if (registryModelId) {
+    const registryModel = await prisma.registryModel.findFirst({
+      where: { id: registryModelId, projectId },
+      select: { id: true },
+    });
+    if (!registryModel) {
+      throw new InvalidRequestError("Registry model not found in this project");
+    }
   }
 
   // Prevent naming collisions between variables and placeholders
@@ -178,6 +203,10 @@ export const createPrompt = async ({
         project: { connect: { id: projectId } },
         config: jsonSchema.parse(config),
         commitMessage,
+        ...(registryModelId
+          ? { registryModel: { connect: { id: registryModelId } } }
+          : {}),
+        ...(modelParams ? { modelParams } : {}),
       },
     }),
     ...promptDependencies.map((dep) =>
@@ -373,6 +402,8 @@ export const duplicatePrompt = async ({
       type: prompt.type,
       prompt: PromptContentSchema.parse(prompt.prompt),
       config: jsonSchema.parse(prompt.config),
+      registryModelId: prompt.registryModelId,
+      modelParams: prompt.modelParams,
       tags: prompt.tags,
       projectId,
       createdBy,
@@ -386,7 +417,7 @@ export const duplicatePrompt = async ({
   // Create all prompts in a single operation
   await prisma.$transaction(async (tx) => {
     await tx.prompt.createMany({
-      data: promptsToCreate,
+      data: promptsToCreate.map(withNullableModelParams),
     });
 
     await tx.promptDependency.createMany({
@@ -534,6 +565,8 @@ export const duplicateFolder = async ({
     type: string;
     prompt: ReturnType<typeof PromptContentSchema.parse>;
     config: ReturnType<typeof jsonSchema.parse>;
+    registryModelId: string | null;
+    modelParams: Prisma.JsonValue | null;
     tags: string[];
     projectId: string;
     createdBy: string;
@@ -581,6 +614,8 @@ export const duplicateFolder = async ({
             })
           : PromptContentSchema.parse(prompt.prompt),
         config: jsonSchema.parse(prompt.config),
+        registryModelId: prompt.registryModelId,
+        modelParams: prompt.modelParams,
         tags: prompt.tags,
         projectId,
         createdBy,
@@ -666,7 +701,7 @@ export const duplicateFolder = async ({
 
   const resolvedPromptsToCreate = await prisma.$transaction(async (tx) => {
     await tx.prompt.createMany({
-      data: allPromptsToCreate,
+      data: allPromptsToCreate.map(withNullableModelParams),
     });
 
     if (promptDependenciesToCreate.length > 0) {
