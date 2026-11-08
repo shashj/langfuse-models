@@ -1,6 +1,6 @@
-import { ZodModelConfig, type ModelConfig } from "@langfuse/shared";
+import { ZodModelConfig, type ModelConfig } from "../../server/llm/types";
 
-type EffectivePromptModel = {
+export type EffectivePromptModel = {
   /** Name of the LLM connection that runs the model. */
   provider: string;
   model: string;

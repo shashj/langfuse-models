@@ -4247,6 +4247,47 @@ describe("MCP Read Tools", () => {
       ).resolves.toBeDefined();
     });
 
+    it("should return the registry model the prompt runs on", async () => {
+      const { context, projectId } = await createMcpTestSetup();
+      const promptName = `test-prompt-${nanoid()}`;
+      const model = await prisma.registryModel.create({
+        data: {
+          projectId,
+          provider: "openai",
+          modelId: "gpt-4o",
+          displayName: "GPT-4o",
+          defaultParams: { temperature: 0.2, max_tokens: 1024 },
+        },
+      });
+      await prisma.prompt.create({
+        data: {
+          id: nanoid(),
+          projectId,
+          name: promptName,
+          prompt: "Hello",
+          type: "text",
+          version: 1,
+          labels: ["latest"],
+          config: {},
+          createdBy: "test",
+          registryModelId: model.id,
+          modelParams: { temperature: 0.9 },
+        },
+      });
+
+      const result = (await handleGetPrompt({ name: promptName }, context)) as {
+        registryModelId: string;
+        model: { provider: string; modelId: string; params: unknown };
+      };
+
+      expect(result.registryModelId).toBe(model.id);
+      expect(result.model).toEqual({
+        provider: "openai",
+        modelId: "gpt-4o",
+        params: { temperature: 0.9, max_tokens: 1024 },
+      });
+    });
+
     it("should fetch prompt by name only (defaults to latest label)", async () => {
       const { context, projectId } = await createMcpTestSetup();
       const promptName = `test-prompt-${nanoid()}`;

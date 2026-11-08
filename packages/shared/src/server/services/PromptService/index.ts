@@ -13,11 +13,40 @@ import {
   ResolvedPromptGraph,
   PromptServiceMetrics,
   PromptResult,
+  PromptWithRegistryModel,
 } from "./types";
 
 import { ParsedPromptDependencyTag } from "../../../features/prompts/parsePromptDependencyTags";
+import { resolveEffectivePromptModel } from "../../../features/prompts/promptModel";
 
 export const MAX_PROMPT_NESTING_DEPTH = 5;
+
+// The registry model is fetched with the prompt but is not part of the prompt
+// itself. Keep the row clean and expose the resolved model next to it.
+const splitRegistryModel = (row: PromptWithRegistryModel) => {
+  const { registryModel, ...prompt } = row;
+  const effective = resolveEffectivePromptModel({
+    registryModel,
+    modelParams: prompt.modelParams,
+  });
+
+  return {
+    prompt,
+    model: effective
+      ? {
+          provider: effective.provider,
+          modelId: effective.model,
+          params: effective.params,
+        }
+      : null,
+  };
+};
+
+const REGISTRY_MODEL_SELECT = {
+  provider: true,
+  modelId: true,
+  defaultParams: true,
+} as const;
 type PrismaClientOrTransaction = PrismaClient | Prisma.TransactionClient;
 
 export class PromptService {
@@ -101,17 +130,22 @@ export class PromptService {
   private async getRawPrompt(
     params: PromptParams,
   ): Promise<PromptResult | null> {
-    const prompt = await this.findPrompt(params);
+    const found = await this.findPrompt(params);
 
-    if (!prompt) return null;
+    if (!found) return null;
+
+    const { prompt, model } = splitRegistryModel(found);
 
     return {
       ...prompt,
+      model,
       resolutionGraph: null,
     };
   }
 
-  private async findPrompt(params: PromptParams): Promise<Prompt | null> {
+  private async findPrompt(
+    params: PromptParams,
+  ): Promise<PromptWithRegistryModel | null> {
     const { projectId, promptName, version, label } = params;
 
     if (version) {
@@ -121,6 +155,7 @@ export class PromptService {
           name: promptName,
           version,
         },
+        include: { registryModel: { select: REGISTRY_MODEL_SELECT } },
       });
     }
 
@@ -133,6 +168,7 @@ export class PromptService {
             has: label,
           },
         },
+        include: { registryModel: { select: REGISTRY_MODEL_SELECT } },
       });
     }
 
@@ -142,10 +178,11 @@ export class PromptService {
   }
 
   public async resolvePrompt(
-    prompt: Prompt | null,
+    found: PromptWithRegistryModel | null,
   ): Promise<PromptResult | null> {
-    if (!prompt) return prompt;
+    if (!found) return found;
 
+    const { prompt, model } = splitRegistryModel(found);
     const promptGraph = await this.buildAndResolvePromptGraph({
       projectId: prompt.projectId,
       parentPrompt: prompt,
@@ -153,6 +190,7 @@ export class PromptService {
 
     return {
       ...prompt,
+      model,
       prompt: promptGraph.resolvedPrompt,
       resolutionGraph: promptGraph.graph,
     };
@@ -162,7 +200,14 @@ export class PromptService {
     try {
       const value = await this.redis?.get(key);
 
-      if (value) return JSON.parse(value) as PromptResult;
+      if (value) {
+        const cached = JSON.parse(value) as Partial<PromptResult>;
+
+        // Entries written before prompts carried a model have no `model` key.
+        // Serving one would leave the model out of the response until it
+        // expires, so treat it as a miss and refill it.
+        if (cached && "model" in cached) return cached as PromptResult;
+      }
     } catch (e) {
       this.logError("Error getting cached prompt", e);
     }

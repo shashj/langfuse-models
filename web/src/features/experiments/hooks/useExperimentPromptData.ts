@@ -10,9 +10,9 @@ import {
   type PromptMessage,
   type PromptToolConfig,
   ZodModelConfig,
+  resolveEffectivePromptModel,
 } from "@langfuse/shared";
 import { z } from "zod/v4";
-import { resolveEffectivePromptModel } from "@/src/features/model-registry/utils/effectivePromptModel";
 
 type ExperimentPromptDataProps = {
   projectId: string;

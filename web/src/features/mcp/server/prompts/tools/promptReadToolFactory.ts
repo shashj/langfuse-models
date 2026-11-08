@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { LATEST_PROMPT_LABEL, type Prompt } from "@langfuse/shared";
+import { LATEST_PROMPT_LABEL } from "@langfuse/shared";
 
 import { getPromptForApi } from "@/src/features/prompts/server/prompt-api-service";
 import { defineTool } from "../../../core/define-tool";
-import { buildPromptUrl } from "@langfuse/shared/src/server";
+import { buildPromptUrl, type PromptResult } from "@langfuse/shared/src/server";
 import { runMcpTool } from "../../../core/run-mcp-tool";
 import { UserInputError } from "../../../core/errors";
 import {
@@ -26,7 +26,7 @@ const PromptReadInputSchema = PromptReadBaseSchema.refine(
   },
 );
 
-const formatPromptResponse = (prompt: Prompt) => ({
+const formatPromptResponse = (prompt: PromptResult) => ({
   id: prompt.id,
   name: prompt.name,
   version: prompt.version,
@@ -35,6 +35,9 @@ const formatPromptResponse = (prompt: Prompt) => ({
   labels: prompt.labels,
   tags: prompt.tags,
   config: prompt.config,
+  registryModelId: prompt.registryModelId,
+  modelParams: prompt.modelParams,
+  model: prompt.model,
   createdAt: prompt.createdAt,
   updatedAt: prompt.updatedAt,
   createdBy: prompt.createdBy,

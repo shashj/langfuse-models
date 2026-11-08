@@ -3392,6 +3392,98 @@ describe("PATCH api/public/v2/prompts/[promptName]/versions/[version]", () => {
     });
   });
 
+  describe("prompt model", () => {
+    const createRegistryModel = (modelProjectId: string) =>
+      prisma.registryModel.create({
+        data: {
+          projectId: modelProjectId,
+          provider: "openai",
+          modelId: "gpt-4o",
+          displayName: "GPT-4o",
+          defaultParams: { temperature: 0.2, max_tokens: 1024 },
+        },
+      });
+
+    const createViaApi = async (auth: string, body: object) => {
+      const { req, res } = createMocks<NextApiRequest, NextApiResponse>({
+        method: "POST",
+        body,
+        headers: { authorization: auth },
+      });
+      await promptsHandler(req, res);
+      return res;
+    };
+
+    const getViaApi = async (auth: string, promptName: string) => {
+      const { req, res } = createMocks<NextApiRequest, NextApiResponse>({
+        method: "GET",
+        query: { promptName, label: "latest" },
+        headers: { authorization: auth },
+      });
+      await promptNameHandler(req, res);
+      return res;
+    };
+
+    it("stores the model sent on create and returns it resolved on read", async () => {
+      const { projectId: modelProjectId, auth } =
+        await createOrgProjectAndApiKey();
+      const model = await createRegistryModel(modelProjectId);
+      const name = "withModel" + uuidv4();
+
+      const created = await createViaApi(auth, {
+        name,
+        type: "text",
+        prompt: "Hello",
+        registryModelId: model.id,
+        modelParams: { temperature: 0.7 },
+      });
+      expect(created._getStatusCode()).toBe(201);
+      expect(created._getJSONData()).toMatchObject({
+        registryModelId: model.id,
+        modelParams: { temperature: 0.7 },
+      });
+
+      const read = await getViaApi(auth, name);
+      expect(read._getStatusCode()).toBe(200);
+      const body = read._getJSONData();
+      expect(body.model).toEqual({
+        provider: "openai",
+        modelId: "gpt-4o",
+        params: { temperature: 0.7, max_tokens: 1024 },
+      });
+      expect(body).not.toHaveProperty("registryModel");
+    });
+
+    it("returns a null model for a prompt without one", async () => {
+      const { auth } = await createOrgProjectAndApiKey();
+      const name = "noModel" + uuidv4();
+      await createViaApi(auth, { name, type: "text", prompt: "Hello" });
+
+      const read = await getViaApi(auth, name);
+      expect(read._getJSONData()).toMatchObject({
+        registryModelId: null,
+        modelParams: null,
+        model: null,
+      });
+    });
+
+    it("rejects a model that belongs to another project", async () => {
+      const { auth } = await createOrgProjectAndApiKey();
+      const { projectId: otherProjectId } = await createOrgProjectAndApiKey();
+      const foreignModel = await createRegistryModel(otherProjectId);
+
+      const res = await createViaApi(auth, {
+        name: "foreignModel" + uuidv4(),
+        type: "text",
+        prompt: "Hello",
+        registryModelId: foreignModel.id,
+      });
+
+      expect(res._getStatusCode()).toBe(400);
+      expect(res._getJSONData().message).toContain("Registry model not found");
+    });
+  });
+
   describe("DELETE /api/public/v2/prompts/:promptName", () => {
     it("returns a bodyless 204", async () => {
       const { projectId, auth } = await createOrgProjectAndApiKey();

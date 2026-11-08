@@ -19,7 +19,6 @@ import {
 } from "@/src/features/playground/page/types";
 import { getMessagesFingerprint } from "@/src/features/playground/page/utils/messagesFingerprint";
 import { buildPlaygroundModelParams } from "@/src/features/playground/page/utils/promptModelParams";
-import { resolveEffectivePromptModel } from "@/src/features/model-registry/utils/effectivePromptModel";
 import { resolveJumpTargetWindowId } from "@/src/features/playground/page/utils/resolveJumpTargetWindowId";
 import {
   getWindowState,
@@ -43,6 +42,7 @@ import {
   isGenerationLike,
   normalizeInput,
   normalizeOutput,
+  resolveEffectivePromptModel,
 } from "@langfuse/shared";
 
 import { extractTools } from "@/src/utils/chatml/extractTools";

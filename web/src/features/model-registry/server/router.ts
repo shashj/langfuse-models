@@ -7,7 +7,11 @@ import {
   LangfuseNotFoundError,
   Prisma,
 } from "@langfuse/shared";
-import { escapeSqlLikePattern } from "@langfuse/shared/src/server";
+import {
+  escapeSqlLikePattern,
+  PromptService,
+  redis,
+} from "@langfuse/shared/src/server";
 import { auditLog } from "@/src/features/audit-logs/auditLog";
 import { LlmConnectionService } from "@/src/features/llm-api-key/server/llmConnectionService";
 import {
@@ -213,6 +217,14 @@ export const modelRegistryRouter = createTRPCRouter({
           after: saved,
         });
 
+        // Cached prompts carry their model's provider, id and default params.
+        // A new model has no prompts yet, so only an edit can make them stale.
+        if (id) {
+          await new PromptService(ctx.prisma, redis).invalidateCache({
+            projectId,
+          });
+        }
+
         return saved;
       } catch (error) {
         if (
@@ -254,6 +266,9 @@ export const modelRegistryRouter = createTRPCRouter({
       }
 
       await ctx.prisma.registryModel.delete({ where: { id: input.id } });
+      await new PromptService(ctx.prisma, redis).invalidateCache({
+        projectId: input.projectId,
+      });
 
       await auditLog({
         session: ctx.session,

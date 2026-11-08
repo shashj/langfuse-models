@@ -152,6 +152,12 @@ types:
       commitMessage:
         type: optional<string>
         docs: Commit message for this prompt version.
+      registryModelId:
+        type: optional<string>
+        docs: ID of a model in the project's model registry that this prompt version runs on.
+      modelParams:
+        type: optional<PromptModelParams>
+        docs: Overrides of the registry model's default parameters for this prompt version. Only used together with `registryModelId`.
 
   CreateTextPromptRequest:
     properties:
@@ -170,6 +176,12 @@ types:
       commitMessage:
         type: optional<string>
         docs: Commit message for this prompt version.
+      registryModelId:
+        type: optional<string>
+        docs: ID of a model in the project's model registry that this prompt version runs on.
+      modelParams:
+        type: optional<PromptModelParams>
+        docs: Overrides of the registry model's default parameters for this prompt version. Only used together with `registryModelId`.
 
   Prompt:
     union:
@@ -198,6 +210,36 @@ types:
       resolutionGraph:
         type: optional<map<string, unknown>>
         docs: The dependency resolution graph for the current prompt. Null if the prompt has no dependencies or if `resolve=false` was used.
+      registryModelId:
+        type: optional<string>
+        docs: ID of the model in the project's model registry that this prompt version runs on. Null if the prompt version has no model.
+      modelParams:
+        type: optional<PromptModelParams>
+        docs: Parameter overrides stored on this prompt version. Null if the prompt version sets none.
+      model:
+        type: optional<PromptModel>
+        docs: The model this prompt version runs on, resolved from the model registry. Null if the prompt version has no model.
+
+  PromptModelParams:
+    docs: Model parameters. All fields are optional.
+    properties:
+      temperature: optional<double>
+      top_p: optional<double>
+      max_tokens: optional<integer>
+      maxReasoningTokens: optional<integer>
+      providerOptions: optional<map<string, unknown>>
+
+  PromptModel:
+    properties:
+      provider:
+        type: string
+        docs: Name of the LLM connection that runs the model.
+      modelId:
+        type: string
+        docs: The model name as the provider expects it.
+      params:
+        type: PromptModelParams
+        docs: Effective parameters, which are the registry model's default parameters with the prompt version's `modelParams` applied on top.
 
   ChatMessageWithPlaceholders:
     discriminated: false

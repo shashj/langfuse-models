@@ -1,6 +1,6 @@
-// @vitest-environment node
+import { describe, expect, it } from "vitest";
 
-import { resolveEffectivePromptModel } from "./effectivePromptModel";
+import { resolveEffectivePromptModel } from "./promptModel";
 
 const registryModel = {
   provider: "openai",

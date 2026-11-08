@@ -6,7 +6,11 @@ import { disconnectQueues } from "@/src/__tests__/test-utils";
 import { prisma } from "@langfuse/shared/src/db";
 import { appRouter } from "@/src/server/api/root";
 import { createInnerTRPCContext } from "@/src/server/api/trpc";
-import { createOrgProjectAndApiKey } from "@langfuse/shared/src/server";
+import {
+  createOrgProjectAndApiKey,
+  PromptService,
+  redis,
+} from "@langfuse/shared/src/server";
 import { PromptType } from "@langfuse/shared";
 
 const createCaller = async (
@@ -245,5 +249,39 @@ describe("model registry tRPC router", () => {
     await expect(
       caller.modelRegistry.delete({ projectId, id: model.id }),
     ).rejects.toThrow(/used by 1 prompt version/);
+  });
+
+  it("serves the edited model to prompts that were already cached", async () => {
+    const { projectId, caller } = await createCaller();
+    const model = await caller.modelRegistry.upsert(
+      baseModel(projectId, { modelId: "before-edit" }),
+    );
+    const name = `cached-model-${randomUUID()}`;
+    await caller.prompts.create({
+      projectId,
+      name,
+      type: PromptType.Text,
+      prompt: "Hello",
+      labels: [],
+      config: {},
+      registryModelId: model.id,
+    });
+    const promptService = new PromptService(prisma, redis, undefined, true);
+    const read = () =>
+      promptService.getPrompt({
+        projectId,
+        promptName: name,
+        label: "latest",
+        version: undefined,
+      });
+
+    expect((await read())?.model?.modelId).toBe("before-edit");
+
+    await caller.modelRegistry.upsert({
+      ...baseModel(projectId, { modelId: "after-edit" }),
+      id: model.id,
+    });
+
+    expect((await read())?.model?.modelId).toBe("after-edit");
   });
 });

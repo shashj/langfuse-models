@@ -1,12 +1,9 @@
-import {
-  InvalidRequestError,
-  PRODUCTION_LABEL,
-  type Prompt,
-} from "@langfuse/shared";
+import { InvalidRequestError, PRODUCTION_LABEL } from "@langfuse/shared";
 import {
   PromptService,
   redis,
   recordIncrement,
+  type PromptResult,
 } from "@langfuse/shared/src/server";
 import { prisma } from "@langfuse/shared/src/db";
 
@@ -20,7 +17,7 @@ type GetPromptByNameParams = {
 
 export const getPromptByName = async (
   params: GetPromptByNameParams,
-): Promise<Prompt | null> => {
+): Promise<PromptResult | null> => {
   const { promptName, projectId, version, label, resolve = true } = params;
 
   if (version && label)

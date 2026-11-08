@@ -1,5 +1,6 @@
 import {
   type TriggerEventAction,
+  type PromptDomain,
   jsonSchemaNullable,
   InternalServerError,
 } from "@langfuse/shared";
@@ -11,7 +12,6 @@ import {
   QueueName,
   QueueJobs,
   matchesTriggerFilter,
-  type PromptResult,
   getAutomations,
   EntityChangeEventType,
 } from "@langfuse/shared/src/server";
@@ -136,7 +136,7 @@ async function enqueueAutomationAction({
   projectId,
   user,
 }: {
-  promptData: PromptResult;
+  promptData: PromptDomain & { resolutionGraph: null };
   action: string;
   triggerId: string;
   actionId: string;

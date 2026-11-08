@@ -13658,6 +13658,18 @@ components:
           type: string
           nullable: true
           description: Commit message for this prompt version.
+        registryModelId:
+          type: string
+          nullable: true
+          description: >-
+            ID of a model in the project's model registry that this prompt
+            version runs on.
+        modelParams:
+          $ref: '#/components/schemas/PromptModelParams'
+          nullable: true
+          description: >-
+            Overrides of the registry model's default parameters for this prompt
+            version. Only used together with `registryModelId`.
       required:
         - name
         - prompt
@@ -13694,6 +13706,18 @@ components:
           type: string
           nullable: true
           description: Commit message for this prompt version.
+        registryModelId:
+          type: string
+          nullable: true
+          description: >-
+            ID of a model in the project's model registry that this prompt
+            version runs on.
+        modelParams:
+          $ref: '#/components/schemas/PromptModelParams'
+          nullable: true
+          description: >-
+            Overrides of the registry model's default parameters for this prompt
+            version. Only used together with `registryModelId`.
       required:
         - name
         - prompt
@@ -13762,12 +13786,72 @@ components:
           description: >-
             The dependency resolution graph for the current prompt. Null if the
             prompt has no dependencies or if `resolve=false` was used.
+        registryModelId:
+          type: string
+          nullable: true
+          description: >-
+            ID of the model in the project's model registry that this prompt
+            version runs on. Null if the prompt version has no model.
+        modelParams:
+          $ref: '#/components/schemas/PromptModelParams'
+          nullable: true
+          description: >-
+            Parameter overrides stored on this prompt version. Null if the
+            prompt version sets none.
+        model:
+          $ref: '#/components/schemas/PromptModel'
+          nullable: true
+          description: >-
+            The model this prompt version runs on, resolved from the model
+            registry. Null if the prompt version has no model.
       required:
         - name
         - version
         - config
         - labels
         - tags
+    PromptModelParams:
+      title: PromptModelParams
+      type: object
+      description: Model parameters. All fields are optional.
+      properties:
+        temperature:
+          type: number
+          format: double
+          nullable: true
+        top_p:
+          type: number
+          format: double
+          nullable: true
+        max_tokens:
+          type: integer
+          nullable: true
+        maxReasoningTokens:
+          type: integer
+          nullable: true
+        providerOptions:
+          type: object
+          additionalProperties: true
+          nullable: true
+    PromptModel:
+      title: PromptModel
+      type: object
+      properties:
+        provider:
+          type: string
+          description: Name of the LLM connection that runs the model.
+        modelId:
+          type: string
+          description: The model name as the provider expects it.
+        params:
+          $ref: '#/components/schemas/PromptModelParams'
+          description: >-
+            Effective parameters, which are the registry model's default
+            parameters with the prompt version's `modelParams` applied on top.
+      required:
+        - provider
+        - modelId
+        - params
     ChatMessageWithPlaceholders:
       title: ChatMessageWithPlaceholders
       oneOf:
