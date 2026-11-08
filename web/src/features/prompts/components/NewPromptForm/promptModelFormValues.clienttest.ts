@@ -2,6 +2,7 @@
 
 import {
   modelFormDefaults,
+  modelFormValuesFromPlayground,
   modelSubmitValues,
   NO_MODEL,
 } from "./promptModelFormValues";
@@ -46,5 +47,34 @@ describe("modelFormDefaults", () => {
       modelTopP: "",
       modelMaxTokens: "512",
     });
+  });
+});
+
+describe("modelFormValuesFromPlayground", () => {
+  it("keeps only the params the playground had enabled", () => {
+    expect(
+      modelFormValuesFromPlayground({
+        registryModelId: "model-1",
+        modelParams: {
+          temperature: { value: 0.7, enabled: true },
+          top_p: { value: 1, enabled: false },
+          max_tokens: { value: 256, enabled: true },
+        },
+      }),
+    ).toEqual({
+      registryModelId: "model-1",
+      modelTemperature: "0.7",
+      modelTopP: "",
+      modelMaxTokens: "256",
+    });
+  });
+
+  it("leaves the form alone when the playground model is not in the registry", () => {
+    expect(
+      modelFormValuesFromPlayground({
+        registryModelId: null,
+        modelParams: { temperature: { value: 0.7, enabled: true } },
+      }),
+    ).toBeNull();
   });
 });

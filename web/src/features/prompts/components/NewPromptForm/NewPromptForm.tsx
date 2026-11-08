@@ -29,7 +29,11 @@ import {
 } from "@langfuse/shared";
 import { PromptChatMessages } from "./PromptChatMessages";
 import { PromptModelFields } from "./PromptModelFields";
-import { modelFormDefaults, modelSubmitValues } from "./promptModelFormValues";
+import {
+  modelFormDefaults,
+  modelFormValuesFromPlayground,
+  modelSubmitValues,
+} from "./promptModelFormValues";
 import { ReviewPromptDialogController } from "./ReviewPromptDialogController";
 import {
   NewPromptFormSchema,
@@ -187,6 +191,14 @@ export const NewPromptForm: React.FC<NewPromptFormProps> = (props) => {
     if (shouldLoadPlaygroundCache && playgroundCache) {
       form.setValue("type", PromptType.Chat);
       setInitialMessages(playgroundCache.messages);
+
+      const model = modelFormValuesFromPlayground(playgroundCache);
+      if (model) {
+        form.setValue("registryModelId", model.registryModelId);
+        form.setValue("modelTemperature", model.modelTemperature);
+        form.setValue("modelTopP", model.modelTopP);
+        form.setValue("modelMaxTokens", model.modelMaxTokens);
+      }
     } else if (initialPrompt?.type === PromptType.Chat) {
       setInitialMessages(initialPrompt.prompt);
     }

@@ -61,6 +61,18 @@ export const SaveToPromptButton: React.FC<SaveToPromptButtonProps> = ({
         id: prompt.id,
       })) ?? [];
 
+  const registryModels = api.modelRegistry.getAll.useQuery(
+    { projectId: projectId as string, searchString: "", page: 0, limit: 200 },
+    { enabled: Boolean(projectId), refetchOnWindowFocus: false },
+  );
+  // The registry model the playground is currently set to, if there is one.
+  const registryModelId =
+    registryModels.data?.models.find(
+      (model) =>
+        model.provider === modelParams.provider.value &&
+        model.modelId === modelParams.model.value,
+    )?.id ?? null;
+
   const handleNewPrompt = async () => {
     capture("playground:save_to_new_prompt_button_click", { projectId });
 
@@ -69,6 +81,7 @@ export const SaveToPromptButton: React.FC<SaveToPromptButtonProps> = ({
       messages,
       output,
       promptVariables,
+      registryModelId,
     });
 
     await router.push(
@@ -84,6 +97,7 @@ export const SaveToPromptButton: React.FC<SaveToPromptButtonProps> = ({
       messages,
       output,
       promptVariables,
+      registryModelId,
     });
 
     await router.push(

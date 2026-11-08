@@ -169,6 +169,30 @@ describe("prompts trpc", () => {
       });
     });
 
+    it("returns the registry model and params with the prompt meta used by experiments", async () => {
+      const { project, caller } = await prepare();
+      const model = await createRegistryModel(project.id);
+      const created = await caller.prompts.create({
+        projectId: project.id,
+        name: `meta-model-${v4()}`,
+        prompt: "Hello",
+        type: PromptType.Text,
+        labels: [],
+        config: {},
+        registryModelId: model.id,
+        modelParams: { temperature: 0.4 },
+      });
+
+      const meta = await caller.prompts.allPromptMeta({
+        projectId: project.id,
+      });
+
+      expect(meta.find((prompt) => prompt.id === created.id)).toMatchObject({
+        modelParams: { temperature: 0.4 },
+        registryModel: { provider: model.provider, modelId: model.modelId },
+      });
+    });
+
     it("rejects a model that belongs to another project", async () => {
       const { project, caller } = await prepare();
       const { project: otherProject } = await createOrgProjectAndApiKey();

@@ -1,4 +1,8 @@
-import { ZodModelConfig, type Prompt } from "@langfuse/shared";
+import {
+  ZodModelConfig,
+  type Prompt,
+  type UIModelParams,
+} from "@langfuse/shared";
 
 /** Select value meaning "this prompt version has no model". */
 export const NO_MODEL = "none";
@@ -47,4 +51,32 @@ export function modelSubmitValues(values: PromptModelFormValues) {
   const hasParams = Object.values(params).some((value) => value !== undefined);
 
   return { registryModelId, modelParams: hasParams ? params : null };
+}
+
+/**
+ * Form values for a prompt saved from the playground: the registry model the
+ * playground was set to and the params it had enabled. Null when the
+ * playground's model is not in the registry.
+ */
+export function modelFormValuesFromPlayground(
+  cache:
+    | {
+        registryModelId?: string | null;
+        modelParams?: Partial<UIModelParams>;
+      }
+    | null
+    | undefined,
+): Required<PromptModelFormValues> | null {
+  if (!cache?.registryModelId) return null;
+
+  const params = cache.modelParams;
+  const enabledValue = (param?: { value: number; enabled: boolean }) =>
+    param?.enabled ? param.value : undefined;
+
+  return {
+    registryModelId: cache.registryModelId,
+    modelTemperature: toText(enabledValue(params?.temperature)),
+    modelTopP: toText(enabledValue(params?.top_p)),
+    modelMaxTokens: toText(enabledValue(params?.max_tokens)),
+  };
 }

@@ -12,6 +12,7 @@ import {
   ZodModelConfig,
 } from "@langfuse/shared";
 import { z } from "zod/v4";
+import { resolveEffectivePromptModel } from "@/src/features/model-registry/utils/effectivePromptModel";
 
 type ExperimentPromptDataProps = {
   projectId: string;
@@ -72,9 +73,20 @@ export function useExperimentPromptData({
     [promptMeta.data],
   );
 
+  // A prompt version's registry model wins. Prompts that predate it fall back
+  // to the model stored in their config.
   const selectedPromptModelConfig = useMemo(() => {
     const prompt = promptMeta.data?.find((p) => p.id === promptId);
-    return getPromptModelConfig(prompt?.config);
+    if (!prompt) return null;
+
+    const registryModel = resolveEffectivePromptModel({
+      registryModel: prompt.registryModel,
+      modelParams: prompt.modelParams,
+    });
+    if (registryModel) {
+      return { provider: registryModel.provider, model: registryModel.model };
+    }
+    return getPromptModelConfig(prompt.config);
   }, [promptId, promptMeta.data]);
 
   const selectedPromptToolConfig: PromptToolConfig = useMemo(() => {

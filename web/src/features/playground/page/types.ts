@@ -44,6 +44,8 @@ export type PlaygroundCache = {
   tools?: PlaygroundTool[];
   structuredOutputSchema?: PlaygroundSchema | null;
   sourcePrompt?: PlaygroundSourcePrompt | null;
+  /** Registry model matching `modelParams`, set when saving the playground as a prompt. */
+  registryModelId?: string | null;
 } | null;
 
 // Multi-window types and interfaces

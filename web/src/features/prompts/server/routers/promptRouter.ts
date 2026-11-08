@@ -1187,6 +1187,10 @@ export const promptRouter = createTRPCRouter({
           prompt: true,
           config: true,
           labels: true,
+          modelParams: true,
+          registryModel: {
+            select: { provider: true, modelId: true, defaultParams: true },
+          },
         },
         where: {
           projectId: input.projectId,
