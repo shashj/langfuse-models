@@ -5230,6 +5230,248 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreatePromptRequest'
+  /api/public/registry-models:
+    post:
+      description: >-
+        Create a registry model. A prompt version can reference it by id to say
+        which model it runs on.
+      operationId: registryModels_create
+      tags:
+        - RegistryModels
+      parameters: []
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistryModel'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+      security: *ref_0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRegistryModelRequest'
+    get:
+      description: Get all registry models of the project
+      operationId: registryModels_list
+      tags:
+        - RegistryModels
+      parameters:
+        - name: page
+          in: query
+          description: page number, starts at 1
+          required: false
+          schema:
+            type: integer
+            nullable: true
+        - name: limit
+          in: query
+          description: limit of items per page
+          required: false
+          schema:
+            type: integer
+            nullable: true
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRegistryModels'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+      security: *ref_0
+  /api/public/registry-models/{id}:
+    get:
+      description: Get a registry model
+      operationId: registryModels_get
+      tags:
+        - RegistryModels
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistryModel'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+      security: *ref_0
+    put:
+      description: >-
+        Replace a registry model. Every writable field is set from the request,
+        so fields that are left out are cleared.
+      operationId: registryModels_replace
+      tags:
+        - RegistryModels
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistryModel'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+      security: *ref_0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRegistryModelRequest'
+    delete:
+      description: Delete a registry model. Fails if prompt versions still reference it.
+      operationId: registryModels_delete
+      tags:
+        - RegistryModels
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteRegistryModelResponse'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+        '405':
+          description: ''
+          content:
+            application/json:
+              schema: {}
+      security: *ref_0
   /api/public/scim/ServiceProviderConfig:
     get:
       description: >-
@@ -13612,6 +13854,13 @@ components:
           description: >-
             Config object of the most recent prompt version that matches the
             filters (if any are provided)
+        lastModel:
+          $ref: '#/components/schemas/PromptModel'
+          nullable: true
+          description: >-
+            Model of the most recent prompt version that matches the filters (if
+            any are provided), resolved from the model registry. Null if that
+            version has no model.
       required:
         - name
         - type
@@ -13924,6 +14173,145 @@ components:
       type: string
       enum:
         - text
+    RegistryModelStatus:
+      title: RegistryModelStatus
+      type: string
+      enum:
+        - active
+        - deprecated
+    RegistryModelCapabilities:
+      title: RegistryModelCapabilities
+      type: object
+      description: What the model supports. A field that is left out means unknown.
+      properties:
+        tools:
+          type: boolean
+          nullable: true
+        vision:
+          type: boolean
+          nullable: true
+        jsonMode:
+          type: boolean
+          nullable: true
+        reasoning:
+          type: boolean
+          nullable: true
+    RegistryModel:
+      title: RegistryModel
+      type: object
+      properties:
+        id:
+          type: string
+        provider:
+          type: string
+          description: Name of the LLM connection that runs the model.
+        modelId:
+          type: string
+          description: The model name as the provider expects it.
+        displayName:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/RegistryModelStatus'
+        contextWindow:
+          type: integer
+          nullable: true
+          description: Context window in tokens.
+        maxOutputTokens:
+          type: integer
+          nullable: true
+        capabilities:
+          $ref: '#/components/schemas/RegistryModelCapabilities'
+        defaultParams:
+          $ref: '#/components/schemas/PromptModelParams'
+          nullable: true
+          description: Parameters that prompt versions using this model start from.
+        pricingModelId:
+          type: string
+          nullable: true
+          description: ID of the model definition that prices this model, if linked.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - provider
+        - modelId
+        - displayName
+        - status
+        - capabilities
+        - createdAt
+        - updatedAt
+    CreateRegistryModelRequest:
+      title: CreateRegistryModelRequest
+      type: object
+      properties:
+        provider:
+          type: string
+          description: >-
+            Name of the LLM connection that runs the model. Together with
+            `modelId` it is unique within the project.
+        modelId:
+          type: string
+          description: The model name as the provider expects it.
+        displayName:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/RegistryModelStatus'
+          nullable: true
+          description: Defaults to `active`.
+        contextWindow:
+          type: integer
+          nullable: true
+          description: Context window in tokens.
+        maxOutputTokens:
+          type: integer
+          nullable: true
+        capabilities:
+          $ref: '#/components/schemas/RegistryModelCapabilities'
+          nullable: true
+        defaultParams:
+          $ref: '#/components/schemas/PromptModelParams'
+          nullable: true
+        pricingModelId:
+          type: string
+          nullable: true
+          description: >-
+            ID of a model definition of this project, or a built-in one, that
+            prices this model.
+      required:
+        - provider
+        - modelId
+        - displayName
+    PaginatedRegistryModels:
+      title: PaginatedRegistryModels
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RegistryModel'
+        meta:
+          $ref: '#/components/schemas/utilsMetaResponse'
+      required:
+        - data
+        - meta
+    DeleteRegistryModelResponse:
+      title: DeleteRegistryModelResponse
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
     ServiceProviderConfig:
       title: ServiceProviderConfig
       type: object

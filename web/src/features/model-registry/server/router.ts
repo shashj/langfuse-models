@@ -2,22 +2,18 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { type Session } from "next-auth";
 
-import {
-  LangfuseConflictError,
-  LangfuseNotFoundError,
-  Prisma,
-} from "@langfuse/shared";
-import {
-  escapeSqlLikePattern,
-  PromptService,
-  redis,
-} from "@langfuse/shared/src/server";
+import { LangfuseNotFoundError, type Prisma } from "@langfuse/shared";
+import { escapeSqlLikePattern } from "@langfuse/shared/src/server";
 import { auditLog } from "@/src/features/audit-logs/auditLog";
 import { LlmConnectionService } from "@/src/features/llm-api-key/server/llmConnectionService";
 import {
   registryModelInclude,
   toRegistryModelRow,
 } from "@/src/features/model-registry/server/mapRegistryModel";
+import {
+  removeRegistryModel,
+  saveRegistryModel,
+} from "@/src/features/model-registry/server/registryModelService";
 import {
   RegistryModelListInputSchema,
   UpsertRegistryModelSchema,
@@ -158,85 +154,24 @@ export const modelRegistryRouter = createTRPCRouter({
         scope: "models:CUD",
       });
 
-      const { id, projectId, pricingModelId, ...fields } = input;
+      const { id, projectId, ...fields } = input;
 
-      // A pricing model must be one of this project's models or a
-      // Langfuse-managed default (null projectId). Anything else would let a
-      // project link to another project's pricing.
-      if (pricingModelId) {
-        const pricingModel = await ctx.prisma.model.findFirst({
-          where: {
-            id: pricingModelId,
-            OR: [{ projectId }, { projectId: null }],
-          },
-          select: { id: true },
-        });
-        if (!pricingModel) {
-          throw new LangfuseNotFoundError("Pricing model not found");
-        }
-      }
+      const { model, created } = await saveRegistryModel({
+        prisma: ctx.prisma,
+        projectId,
+        id,
+        input: fields,
+      });
 
-      const data = {
-        provider: fields.provider,
-        modelId: fields.modelId,
-        displayName: fields.displayName,
-        description: fields.description ?? null,
-        status: fields.status,
-        contextWindow: fields.contextWindow ?? null,
-        maxOutputTokens: fields.maxOutputTokens ?? null,
-        capabilities: fields.capabilities,
-        defaultParams: fields.defaultParams ?? Prisma.DbNull,
-        pricingModelId: pricingModelId ?? null,
-      };
+      await auditLog({
+        session: ctx.session,
+        resourceType: "registryModel",
+        resourceId: model.id,
+        action: created ? "create" : "update",
+        after: model,
+      });
 
-      try {
-        if (id) {
-          const existing = await ctx.prisma.registryModel.findFirst({
-            where: { id, projectId },
-            select: { id: true },
-          });
-          if (!existing) {
-            throw new LangfuseNotFoundError("Registry model not found");
-          }
-        }
-
-        const saved = id
-          ? await ctx.prisma.registryModel.update({
-              where: { id },
-              data,
-            })
-          : await ctx.prisma.registryModel.create({
-              data: { ...data, projectId },
-            });
-
-        await auditLog({
-          session: ctx.session,
-          resourceType: "registryModel",
-          resourceId: saved.id,
-          action: id ? "update" : "create",
-          after: saved,
-        });
-
-        // Cached prompts carry their model's provider, id and default params.
-        // A new model has no prompts yet, so only an edit can make them stale.
-        if (id) {
-          await new PromptService(ctx.prisma, redis).invalidateCache({
-            projectId,
-          });
-        }
-
-        return saved;
-      } catch (error) {
-        if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === "P2002"
-        ) {
-          throw new LangfuseConflictError(
-            `${fields.modelId} is already registered for provider ${fields.provider}`,
-          );
-        }
-        throw error;
-      }
+      return model;
     }),
 
   delete: protectedProjectProcedure
@@ -248,26 +183,10 @@ export const modelRegistryRouter = createTRPCRouter({
         scope: "models:CUD",
       });
 
-      const existing = await ctx.prisma.registryModel.findFirst({
-        where: { id: input.id, projectId: input.projectId },
-      });
-      if (!existing)
-        throw new LangfuseNotFoundError("Registry model not found");
-
-      // The foreign key would null the reference out, silently leaving those
-      // prompt versions without a model.
-      const referencingPrompts = await ctx.prisma.prompt.count({
-        where: { projectId: input.projectId, registryModelId: input.id },
-      });
-      if (referencingPrompts > 0) {
-        throw new LangfuseConflictError(
-          `This model is used by ${referencingPrompts} prompt version${referencingPrompts === 1 ? "" : "s"}. Remove it from those prompts before deleting it.`,
-        );
-      }
-
-      await ctx.prisma.registryModel.delete({ where: { id: input.id } });
-      await new PromptService(ctx.prisma, redis).invalidateCache({
+      const deleted = await removeRegistryModel({
+        prisma: ctx.prisma,
         projectId: input.projectId,
+        id: input.id,
       });
 
       await auditLog({
@@ -275,10 +194,10 @@ export const modelRegistryRouter = createTRPCRouter({
         resourceType: "registryModel",
         resourceId: input.id,
         action: "delete",
-        before: existing,
+        before: deleted,
       });
 
-      return existing;
+      return deleted;
     }),
 
   /**

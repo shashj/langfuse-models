@@ -4,6 +4,8 @@ import {
   type FilterState,
   promptsTableCols,
   type PromptType,
+  resolveEffectivePromptModel,
+  type ModelConfig,
 } from "@langfuse/shared";
 import { prisma } from "@langfuse/shared/src/db";
 import {
@@ -19,7 +21,7 @@ export const getPromptsMeta = async (
 ): Promise<PromptsMetaResponse> => {
   const { projectId, page, limit } = params;
 
-  const promptsMeta = (await prisma.$queryRaw`
+  const promptsMetaRows = (await prisma.$queryRaw`
     WITH page_names AS MATERIALIZED (
       SELECT p.name
       FROM prompts p
@@ -37,7 +39,11 @@ export const getPromptsMeta = async (
       metadata.versions,
       metadata.labels,
       latest.type AS type,
-      latest.config AS "lastConfig"
+      latest.config AS "lastConfig",
+      latest.model_params AS "lastModelParams",
+      latest.model_provider AS "lastModelProvider",
+      latest.model_id AS "lastModelId",
+      latest.model_default_params AS "lastModelDefaultParams"
     FROM page_names n
     CROSS JOIN LATERAL (
       SELECT
@@ -55,8 +61,15 @@ export const getPromptsMeta = async (
         ${getPromptsFilterCondition(params)}
     ) metadata
     LEFT JOIN LATERAL (
-      SELECT p.config, p.type
+      SELECT
+        p.config,
+        p.type,
+        p.model_params,
+        rm.provider AS model_provider,
+        rm.model_id AS model_id,
+        rm.default_params AS model_default_params
       FROM prompts p
+      LEFT JOIN registry_models rm ON rm.id = p.registry_model_id
       WHERE p."project_id" = ${projectId}
         AND p.name = n.name
         ${getPromptsFilterCondition(params)}
@@ -64,7 +77,40 @@ export const getPromptsMeta = async (
       LIMIT 1
     ) latest ON true
     ORDER BY n.name
-  `) as PromptsMeta[];
+  `) as PromptsMetaRow[];
+
+  const promptsMeta: PromptsMeta[] = promptsMetaRows.map(
+    ({
+      lastModelParams,
+      lastModelProvider,
+      lastModelId,
+      lastModelDefaultParams,
+      ...meta
+    }) => {
+      const model = resolveEffectivePromptModel({
+        registryModel:
+          lastModelProvider && lastModelId
+            ? {
+                provider: lastModelProvider,
+                modelId: lastModelId,
+                defaultParams: lastModelDefaultParams,
+              }
+            : null,
+        modelParams: lastModelParams,
+      });
+
+      return {
+        ...meta,
+        lastModel: model
+          ? {
+              provider: model.provider,
+              modelId: model.model,
+              params: model.params,
+            }
+          : null,
+      };
+    },
+  );
 
   // Page crawls repeat the same full-project count on every page.
   const filterCondition = getPromptsFilterCondition(params);
@@ -105,6 +151,20 @@ type PromptsMeta = {
   lastUpdatedAt: Date;
   type: PromptType;
   lastConfig: unknown; // json object
+  /** The model of the most recent matching version, with its effective params. */
+  lastModel: {
+    provider: string;
+    modelId: string;
+    params: ModelConfig;
+  } | null;
+};
+
+// A list row as selected, before the model columns are resolved into `lastModel`.
+type PromptsMetaRow = Omit<PromptsMeta, "lastModel"> & {
+  lastModelParams: unknown;
+  lastModelProvider: string | null;
+  lastModelId: string | null;
+  lastModelDefaultParams: unknown;
 };
 
 export type PromptsMetaResponse = {

@@ -241,6 +241,9 @@ export const MultiStepExperimentForm = ({
             ? { provider: selectedPromptModelConfig.provider }
             : {}),
           model: selectedPromptModelConfig.model,
+          ...(selectedPromptModelConfig.params
+            ? { params: selectedPromptModelConfig.params }
+            : {}),
         }
       : null,
   });

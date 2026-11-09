@@ -6,6 +6,7 @@ import useLocalStorage from "@/src/components/useLocalStorage";
 import {
   LLMAdapter,
   supportedModels,
+  type ModelConfig,
   type ModelParams,
   type UIModelParams,
 } from "@langfuse/shared";
@@ -13,11 +14,14 @@ import { type ModelParamsContext } from "@/src/components/ModelParameters";
 import { getModelNameKey, getModelProviderKey } from "../storage/keys";
 import { getEnabledModelParamState } from "@/src/utils/getFinalModelParams";
 import { getDefaultAdapterParams } from "../utils/defaultAdapterParams";
+import { buildPlaygroundModelParams } from "../utils/promptModelParams";
 
 type PromptConfigModel = {
   selectionKey?: string;
   provider?: string;
   model: string;
+  /** Parameters the prompt sets. Applied together with the model. */
+  params?: ModelConfig;
 };
 
 type UseModelParamsOptions = {
@@ -97,6 +101,15 @@ export const useModelParams = (
 
     return matchingApiKey?.provider;
   }, [availableLLMApiKeys.data?.data, promptConfigModel, promptConfigProvider]);
+
+  const promptConfigParams = options?.promptConfigModel?.params;
+  const promptConfigAdapter = useMemo(
+    () =>
+      availableLLMApiKeys.data?.data.find(
+        ({ provider }) => provider === resolvedPromptConfigProvider,
+      )?.adapter,
+    [availableLLMApiKeys.data?.data, resolvedPromptConfigProvider],
+  );
 
   const providerModelCombinations =
     availableLLMApiKeys.data?.data.reduce((acc, v) => {
@@ -238,6 +251,26 @@ export const useModelParams = (
       return;
     }
 
+    // A prompt that sets params brings the connection's adapter and the full
+    // adapter defaults with it. The adapter effect below resets the params
+    // whenever the adapter changes, so the adapter has to match from the start.
+    const hasParams =
+      promptConfigParams && Object.keys(promptConfigParams).length > 0;
+    if (hasParams && promptConfigAdapter) {
+      setModelParams((prev) => ({
+        ...prev,
+        ...buildPlaygroundModelParams(
+          {
+            provider: resolvedPromptConfigProvider,
+            model: promptConfigModel,
+            params: promptConfigParams,
+          },
+          promptConfigAdapter,
+        ),
+      }));
+      return;
+    }
+
     setModelParams((prev) => ({
       ...prev,
       provider: { value: resolvedPromptConfigProvider, enabled: true },
@@ -247,6 +280,8 @@ export const useModelParams = (
     promptConfigSelectionKey,
     promptConfigModel,
     resolvedPromptConfigProvider,
+    promptConfigAdapter,
+    promptConfigParams,
   ]);
 
   // Update adapter, max temperature, temperature, max_tokens, top_p when provider changes

@@ -3467,6 +3467,50 @@ describe("PATCH api/public/v2/prompts/[promptName]/versions/[version]", () => {
       });
     });
 
+    it("lists the model of each prompt's latest version", async () => {
+      const { projectId: modelProjectId, auth } =
+        await createOrgProjectAndApiKey();
+      const model = await createRegistryModel(modelProjectId);
+      const withModel = "listWithModel" + uuidv4();
+      const withoutModel = "listWithoutModel" + uuidv4();
+      const droppedModel = "listDroppedModel" + uuidv4();
+      const base = { type: "text", prompt: "Hello" };
+
+      await createViaApi(auth, {
+        ...base,
+        name: withModel,
+        registryModelId: model.id,
+        modelParams: { temperature: 0.7 },
+      });
+      await createViaApi(auth, { ...base, name: withoutModel });
+      // The newest version has no model, so the prompt has none either.
+      await createViaApi(auth, {
+        ...base,
+        name: droppedModel,
+        registryModelId: model.id,
+      });
+      await createViaApi(auth, { ...base, name: droppedModel });
+
+      const { req, res } = createMocks<NextApiRequest, NextApiResponse>({
+        method: "GET",
+        query: {},
+        headers: { authorization: auth },
+      });
+      await promptsHandler(req, res);
+      const lastModelOf = (name: string) =>
+        (res._getJSONData() as PromptsMetaResponse).data.find(
+          (prompt) => prompt.name === name,
+        )?.lastModel;
+
+      expect(lastModelOf(withModel)).toEqual({
+        provider: "openai",
+        modelId: "gpt-4o",
+        params: { temperature: 0.7, max_tokens: 1024 },
+      });
+      expect(lastModelOf(withoutModel)).toBeNull();
+      expect(lastModelOf(droppedModel)).toBeNull();
+    });
+
     it("rejects a model that belongs to another project", async () => {
       const { auth } = await createOrgProjectAndApiKey();
       const { projectId: otherProjectId } = await createOrgProjectAndApiKey();

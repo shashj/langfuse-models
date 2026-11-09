@@ -9,6 +9,7 @@ import {
   extractPlaceholderNames,
   type PromptMessage,
   type PromptToolConfig,
+  type ModelConfig,
   ZodModelConfig,
   resolveEffectivePromptModel,
 } from "@langfuse/shared";
@@ -22,6 +23,8 @@ type ExperimentPromptDataProps = {
 export type ExperimentPromptModelConfig = {
   provider?: string;
   model: string;
+  /** Parameters of the prompt's registry model, with the prompt's overrides applied. */
+  params?: ModelConfig;
 };
 
 export function useExperimentPromptData({
@@ -84,7 +87,11 @@ export function useExperimentPromptData({
       modelParams: prompt.modelParams,
     });
     if (registryModel) {
-      return { provider: registryModel.provider, model: registryModel.model };
+      return {
+        provider: registryModel.provider,
+        model: registryModel.model,
+        params: registryModel.params,
+      };
     }
     return getPromptModelConfig(prompt.config);
   }, [promptId, promptMeta.data]);

@@ -18,6 +18,16 @@ import { api } from "@/src/utils/api";
 
 const NO_PRICING = "none";
 
+const CAPABILITY_DESCRIPTIONS: Record<
+  (typeof CAPABILITY_KEYS)[number],
+  string
+> = {
+  tools: "This model supports tool calling.",
+  vision: "This model supports vision.",
+  jsonMode: "This model supports JSON mode.",
+  reasoning: "This model supports reasoning.",
+};
+
 // Numbers are kept as text while editing and converted on submit.
 const optionalPositiveInt = z
   .string()
@@ -233,7 +243,7 @@ export function UpsertRegistryModelDialog({
                   checked={field.value}
                   onCheckedChange={field.onChange}
                   onBlur={field.onBlur}
-                  description={`This model supports ${CAPABILITY_LABELS[key].toLowerCase()}.`}
+                  description={CAPABILITY_DESCRIPTIONS[key]}
                   aria-describedby={field.inputDescribedById}
                 />
               )}
