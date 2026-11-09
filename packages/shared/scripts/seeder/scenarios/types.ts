@@ -18,7 +18,7 @@ export type ScenarioFlag = {
 
 export type SeedSummary = {
   scenario: string;
-  target: "clickhouse" | "api";
+  target: "clickhouse" | "postgres" | "api";
   params: Record<string, string | number | boolean>;
   projectId: string;
   environment: string;

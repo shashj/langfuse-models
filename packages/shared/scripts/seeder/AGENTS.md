@@ -32,6 +32,7 @@ pnpm run seed -- topics --batch all  # 12 discovery + 3 assignment traces for To
 pnpm run seed -- topics --batch evaluation --id-prefix topics-eval-s42  # 100 diverse requests, tool failures and successful outcomes
 pnpm run seed -- custom-models --v4  # project-level model definitions (tiered + single-tier, one price at 0) + a trace whose generations link to them, plus one unpriced model
 pnpm run seed -- custom-models --v4 --usage-states  # same model fixtures plus root/child inferred, empty, zero, and error usage/cost states
+pnpm run seed -- registry-models  # every model Langfuse lists for its providers (85) in the project model registry; --adapters openai,anthropic limits it; safe to re-run
 pnpm run seed -- experiment-io  # one v4 experiment with three chat/nested JSON items for the Formatted/JSON switch
 pnpm run seed -- experiment-filters  # three v4 runs over 60 items, shifted numeric/categorical/boolean scores, status, metadata and missing results
 pnpm run seed -- experiment-io --compare  # same dataset plus a second run with a long chat output, for the comparison table

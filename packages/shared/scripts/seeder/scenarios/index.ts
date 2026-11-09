@@ -12,6 +12,7 @@ import { incidentSessionScenario } from "./incident-session";
 import { longSessionScenario } from "./long-session";
 import { manyTracesScenario } from "./many-traces";
 import { outlierTrafficScenario } from "./outlier-traffic";
+import { registryModelsScenario } from "./registry-models";
 import { scoredTracesScenario } from "./scored-traces";
 import { sessionShapesScenario } from "./session-shapes";
 import { sessionThreadsScenario } from "./session-threads";
@@ -45,6 +46,7 @@ export const scenarios: Record<string, ScenarioDefinition> = {
   "session-variety": sessionVarietyScenario,
   "annotation-queue": annotationQueueScenario,
   "custom-models": customModelsScenario,
+  "registry-models": registryModelsScenario,
   "support-agent": supportAgentScenario,
   "incident-session": incidentSessionScenario,
   "timeline-annotated": timelineAnnotatedScenario,
