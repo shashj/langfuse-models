@@ -67,17 +67,16 @@ const columns: LangfuseColumnDef<RegistryModelRow>[] = [
     size: 140,
     enableHiding: true,
   }),
+  // Only a usable model gets a badge. With a full catalogue most rows have no
+  // connection, and a badge on each of them would drown out the ones that do.
   createBadgeTableColumn<RegistryModelRow>({
-    accessorFn: (row) =>
-      row.connectionAvailable ? "Connected" : "No connection",
+    accessorFn: (row) => (row.connectionAvailable ? "Connected" : undefined),
     id: "connection",
     header: "Connection",
+    nullValue: "No connection",
     size: 120,
     range: "semantic",
-    getBadge: (value) => ({
-      value,
-      variant: value === "Connected" ? "success" : "unknown",
-    }),
+    getBadge: (value) => ({ value, variant: "success" }),
   }),
 ];
 
