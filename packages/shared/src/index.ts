@@ -189,6 +189,7 @@ export * from "./features/prompts/parsePromptDependencyTags";
 export * from "./features/prompts/validation";
 export * from "./features/prompts/types";
 export * from "./features/prompts/constants";
+export * from "./features/prompts/promptModel";
 
 // onboarding
 export * from "./features/onboarding/starterOrganization";

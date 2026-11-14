@@ -19,6 +19,7 @@ import { CodeSection } from "@/src/components/design-system/CodeSection/CodeSect
 import { DetailPageNav } from "@/src/features/navigate-detail-pages/DetailPageNav";
 import useProjectIdFromURL from "@/src/hooks/useProjectIdFromURL";
 import { api } from "@/src/utils/api";
+import { PromptModelSummary } from "@/src/features/prompts/components/PromptModelSummary";
 import { getNumberFromMap } from "@/src/utils/map-utils";
 import { cn } from "@/src/utils/tailwind";
 import {
@@ -771,7 +772,14 @@ export const PromptDetail = ({
               </div>
             </Tabs.Content>
             <Tabs.Content value="config" layout="fill">
-              <div className="flex max-h-full min-h-0 w-full flex-col overflow-y-auto px-4 pt-3 pb-4">
+              <div className="flex max-h-full min-h-0 w-full flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4">
+                {projectId && (
+                  <PromptModelSummary
+                    projectId={projectId}
+                    registryModelId={prompt.registryModelId}
+                    modelParams={prompt.modelParams}
+                  />
+                )}
                 <JSONView
                   json={prompt.config}
                   title="Config"

@@ -1915,6 +1915,31 @@ describe("MCP Write Tools", () => {
   });
 
   describe("createTextPrompt tool", () => {
+    it("should create a text prompt that runs on a registry model", async () => {
+      const { context, projectId } = await createMcpTestSetup();
+      const model = await prisma.registryModel.create({
+        data: {
+          projectId,
+          provider: "openai",
+          modelId: "gpt-4o",
+          displayName: "GPT-4o",
+        },
+      });
+
+      const result = (await handleCreateTextPrompt(
+        {
+          name: `text-prompt-${nanoid()}`,
+          prompt: "Hello",
+          registryModelId: model.id,
+          modelParams: { temperature: 0.4 },
+        },
+        context,
+      )) as { registryModelId: string; modelParams: Record<string, unknown> };
+
+      expect(result.registryModelId).toBe(model.id);
+      expect(result.modelParams).toEqual({ temperature: 0.4 });
+    });
+
     it("should create a simple text prompt", async () => {
       const { context } = await createMcpTestSetup();
       const promptName = `text-prompt-${nanoid()}`;

@@ -18,6 +18,7 @@ import {
   type PlaygroundTool,
 } from "@/src/features/playground/page/types";
 import { getMessagesFingerprint } from "@/src/features/playground/page/utils/messagesFingerprint";
+import { buildPlaygroundModelParams } from "@/src/features/playground/page/utils/promptModelParams";
 import { resolveJumpTargetWindowId } from "@/src/features/playground/page/utils/resolveJumpTargetWindowId";
 import {
   getWindowState,
@@ -41,6 +42,7 @@ import {
   isGenerationLike,
   normalizeInput,
   normalizeOutput,
+  resolveEffectivePromptModel,
 } from "@langfuse/shared";
 
 import { extractTools } from "@/src/utils/chatml/extractTools";
@@ -141,13 +143,45 @@ export function useJumpToPlayground(
   const prompt = props.source === "prompt" ? props.prompt : undefined;
   const generation =
     props.source === "generation" ? (props.generation ?? undefined) : undefined;
+
+  const registryModel = api.modelRegistry.getById.useQuery(
+    { projectId: projectId as string, id: prompt?.registryModelId ?? "" },
+    {
+      enabled: Boolean(projectId && prompt?.registryModelId),
+      refetchOnWindowFocus: false,
+    },
+  );
+  const promptModelParams = useMemo(() => {
+    // Like a generation's model, a prompt's model is only pre-filled when a
+    // connection can run it.
+    if (!registryModel.data?.connectionAvailable) return undefined;
+
+    const effective = resolveEffectivePromptModel({
+      registryModel: registryModel.data,
+      modelParams: prompt?.modelParams,
+    });
+    const adapter = (apiKeys.data?.data ?? []).find(
+      (key) => key.provider === effective?.provider,
+    )?.adapter;
+
+    return effective && adapter
+      ? buildPlaygroundModelParams(effective, adapter)
+      : undefined;
+  }, [registryModel.data, prompt?.modelParams, apiKeys.data]);
+
   const capturedState = useMemo(() => {
-    if (prompt) return parsePrompt(prompt);
+    if (prompt) return parsePrompt(prompt, promptModelParams);
     if (generation) {
       return parseGeneration(generation, modelToProviderMap, includeOutput);
     }
     return null;
-  }, [prompt, generation, modelToProviderMap, includeOutput]);
+  }, [
+    prompt,
+    generation,
+    modelToProviderMap,
+    includeOutput,
+    promptModelParams,
+  ]);
   const isAvailable = capturedState !== null;
 
   const handlePlaygroundAction = useCallback(
@@ -267,6 +301,7 @@ export const JumpToPlaygroundDropdownMenuController = (
 
 const parsePrompt = (
   prompt: Prompt & { resolvedPrompt?: Prisma.JsonValue },
+  modelParams?: ReturnType<typeof buildPlaygroundModelParams>,
 ): PlaygroundCache => {
   const asSourcePrompt = (
     messages: (ChatMessage | PlaceholderMessage)[],
@@ -290,7 +325,11 @@ const parsePrompt = (
 
       if (messages.length === 0) return null;
 
-      return { messages, sourcePrompt: asSourcePrompt(messages) };
+      return {
+        messages,
+        sourcePrompt: asSourcePrompt(messages),
+        ...(modelParams ? { modelParams } : {}),
+      };
     } catch {
       return null;
     }
@@ -305,7 +344,11 @@ const parsePrompt = (
       }),
     ];
 
-    return { messages, sourcePrompt: asSourcePrompt(messages) };
+    return {
+      messages,
+      sourcePrompt: asSourcePrompt(messages),
+      ...(modelParams ? { modelParams } : {}),
+    };
   }
 };
 

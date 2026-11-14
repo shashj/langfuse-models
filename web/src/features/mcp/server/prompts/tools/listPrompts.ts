@@ -136,6 +136,7 @@ export const [listPromptsTool, handleListPrompts] = defineTool({
               tags: prompt.tags,
               lastUpdatedAt: prompt.lastUpdatedAt,
               lastConfig: prompt.lastConfig,
+              lastModel: prompt.lastModel,
               url: buildPromptUrl({
                 projectId: context.projectId,
                 name: prompt.name,

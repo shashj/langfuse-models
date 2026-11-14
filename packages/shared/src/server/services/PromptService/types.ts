@@ -1,7 +1,29 @@
-import { type Prompt } from "../../../db";
+import { type Prisma, type Prompt } from "../../../db";
+import { type ModelConfig } from "../../llm/types";
+
+/** The registry model fields a prompt read needs to resolve its model. */
+export type PromptRegistryModel = {
+  provider: string;
+  modelId: string;
+  defaultParams: Prisma.JsonValue | null;
+};
+
+/** A prompt row, optionally with the registry model it references. */
+export type PromptWithRegistryModel = Prompt & {
+  registryModel?: PromptRegistryModel | null;
+};
+
+/** The model a prompt version runs on, with its effective parameters. */
+export type PromptResultModel = {
+  provider: string;
+  modelId: string;
+  params: ModelConfig;
+};
 
 export type PromptResult = Prompt & {
   resolutionGraph: PromptGraph | null;
+  /** Null when the prompt has no registry model. */
+  model: PromptResultModel | null;
 };
 
 export type PromptParams = {

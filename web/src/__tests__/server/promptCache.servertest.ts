@@ -16,6 +16,7 @@ describe("PromptService", () => {
 
   const mockPrompt: Omit<Prompt, "updatedAt" | "createdAt"> & {
     resolutionGraph: null;
+    model: null;
   } = {
     id: "1",
     projectId: "project1",
@@ -29,7 +30,10 @@ describe("PromptService", () => {
     config: {},
     tags: [],
     commitMessage: null,
+    registryModelId: null,
+    modelParams: null,
     resolutionGraph: null,
+    model: null,
   };
 
   beforeEach(() => {
@@ -74,6 +78,37 @@ describe("PromptService", () => {
 
       expect(result).toEqual(mockPrompt);
       expect(mockMetricIncrementer).toHaveBeenCalledWith("prompt_cache_hit", 1);
+    });
+
+    it("treats a cached prompt without a model as a miss and refills it", async () => {
+      const { model: _model, ...cachedBeforeModels } = mockPrompt;
+      mockRedis.get.mockResolvedValueOnce("epoch-1"); // getOrCreateEpoch for cache read
+      mockRedis.get.mockResolvedValueOnce(JSON.stringify(cachedBeforeModels));
+      promptFindFirstMock.mockResolvedValue({
+        ...cachedBeforeModels,
+        modelParams: { max_tokens: 100 },
+        registryModel: {
+          provider: "openai",
+          modelId: "gpt-4o",
+          defaultParams: { temperature: 0.2, max_tokens: 1024 },
+        },
+      });
+      mockRedis.get.mockResolvedValueOnce("epoch-1"); // getOrCreateEpoch for cache write
+
+      const result = await promptService.getPrompt({
+        projectId: "project1",
+        promptName: "testPrompt",
+        version: 1,
+        label: undefined,
+      });
+
+      expect(mockPrisma.prompt.findFirst).toHaveBeenCalled();
+      expect(result?.model).toEqual({
+        provider: "openai",
+        modelId: "gpt-4o",
+        params: { temperature: 0.2, max_tokens: 100 },
+      });
+      expect(result).not.toHaveProperty("registryModel");
     });
 
     it("should fetch from database if not in cache", async () => {

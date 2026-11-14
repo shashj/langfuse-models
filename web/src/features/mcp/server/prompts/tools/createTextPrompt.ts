@@ -11,6 +11,7 @@ import {
   PromptType,
   PromptNameSchema,
   COMMIT_MESSAGE_MAX_LENGTH,
+  ZodModelConfig,
   PROMPT_NAME_MAX_LENGTH,
 } from "@langfuse/shared";
 import { createPromptForApi } from "@/src/features/prompts/server/prompt-api-service";
@@ -51,6 +52,23 @@ const CreateTextPromptBaseSchema = z.object({
     .string()
     .optional()
     .describe("Optional commit message describing the changes"),
+  registryModelId: z
+    .string()
+    .optional()
+    .describe(
+      "Optional ID of a registry model of this project (see the Models page) that this prompt version should run on",
+    ),
+  modelParams: z
+    .object({
+      temperature: z.number().optional(),
+      top_p: z.number().optional(),
+      max_tokens: z.number().optional(),
+      maxReasoningTokens: z.number().optional(),
+    })
+    .optional()
+    .describe(
+      "Optional overrides of the registry model's default parameters. Only used together with registryModelId",
+    ),
 });
 
 /**
@@ -64,6 +82,8 @@ const CreateTextPromptInputSchema = z.object({
   config: z.record(z.string(), z.any()).optional(),
   tags: z.array(z.string()).optional(),
   commitMessage: z.string().max(COMMIT_MESSAGE_MAX_LENGTH).optional(),
+  registryModelId: z.string().optional(),
+  modelParams: ZodModelConfig.optional(),
 });
 
 /**
@@ -83,7 +103,7 @@ export const [createTextPromptTool, handleCreateTextPrompt] = defineTool({
     "- Labels are unique across versions",
     "- Use {{variable_name}} syntax for dynamic content",
     "",
-    "Accepts: name, prompt (string), optional labels, config, tags, commitMessage",
+    "Accepts: name, prompt (string), optional labels, config, tags, commitMessage, registryModelId, modelParams",
   ].join("\n"),
   action: "prompts:CUD",
   baseSchema: CreateTextPromptBaseSchema,
@@ -108,6 +128,8 @@ export const [createTextPromptTool, handleCreateTextPrompt] = defineTool({
             config: input.config ?? {},
             tags: input.tags,
             commitMessage: input.commitMessage,
+            registryModelId: input.registryModelId,
+            modelParams: input.modelParams,
           }),
         });
 
@@ -122,6 +144,8 @@ export const [createTextPromptTool, handleCreateTextPrompt] = defineTool({
           labels: createdPrompt.labels,
           tags: createdPrompt.tags,
           config: createdPrompt.config,
+          registryModelId: createdPrompt.registryModelId,
+          modelParams: createdPrompt.modelParams,
           createdAt: createdPrompt.createdAt,
           createdBy: createdPrompt.createdBy,
           url: buildPromptUrl({

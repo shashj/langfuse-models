@@ -25,6 +25,7 @@ import {
   Box,
   KeyRound,
   ArrowUpRight,
+  Boxes,
 } from "@langfuse/icons";
 import { useRouter } from "next/router";
 import { type ReactNode } from "react";
@@ -246,6 +247,15 @@ export const ROUTES: Route[] = [
     href: "/project/[projectId]/prompts",
     icon: FileJson,
     projectRbacScopes: ["prompts:read"],
+    productModule: "prompt-management",
+    group: RouteGroup.ContextManagement,
+    section: RouteSection.Main,
+  },
+  {
+    title: "Models",
+    href: "/project/[projectId]/models",
+    icon: Boxes,
+    projectRbacScopes: ["models:read", "prompts:read"],
     productModule: "prompt-management",
     group: RouteGroup.ContextManagement,
     section: RouteSection.Main,

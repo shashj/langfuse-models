@@ -28,6 +28,12 @@ import {
   getIsCharOrUnderscore,
 } from "@langfuse/shared";
 import { PromptChatMessages } from "./PromptChatMessages";
+import { PromptModelFields } from "./PromptModelFields";
+import {
+  modelFormDefaults,
+  modelFormValuesFromPlayground,
+  modelSubmitValues,
+} from "./promptModelFormValues";
 import { ReviewPromptDialogController } from "./ReviewPromptDialogController";
 import {
   NewPromptFormSchema,
@@ -88,6 +94,7 @@ export const NewPromptForm: React.FC<NewPromptFormProps> = (props) => {
         : "",
     name: initialPrompt?.name ?? (folderPath ? `${folderPath}/` : ""),
     config: JSON.stringify(initialPrompt?.config?.valueOf(), null, 2) || "{}",
+    ...modelFormDefaults(initialPrompt),
     isActive: !Boolean(initialPrompt),
     commitMessage: undefined,
   };
@@ -148,6 +155,7 @@ export const NewPromptForm: React.FC<NewPromptFormProps> = (props) => {
         type,
         prompt: chatPrompt,
         config: JSON.parse(values.config),
+        ...modelSubmitValues(values),
         labels: values.isActive ? [PRODUCTION_LABEL] : [],
       };
     } else {
@@ -157,6 +165,7 @@ export const NewPromptForm: React.FC<NewPromptFormProps> = (props) => {
         type,
         prompt: textPrompt,
         config: JSON.parse(values.config),
+        ...modelSubmitValues(values),
         labels: values.isActive ? [PRODUCTION_LABEL] : [],
       };
     }
@@ -182,6 +191,14 @@ export const NewPromptForm: React.FC<NewPromptFormProps> = (props) => {
     if (shouldLoadPlaygroundCache && playgroundCache) {
       form.setValue("type", PromptType.Chat);
       setInitialMessages(playgroundCache.messages);
+
+      const model = modelFormValuesFromPlayground(playgroundCache);
+      if (model) {
+        form.setValue("registryModelId", model.registryModelId);
+        form.setValue("modelTemperature", model.modelTemperature);
+        form.setValue("modelTopP", model.modelTopP);
+        form.setValue("modelMaxTokens", model.modelMaxTokens);
+      }
     } else if (initialPrompt?.type === PromptType.Chat) {
       setInitialMessages(initialPrompt.prompt);
     }
@@ -388,6 +405,8 @@ export const NewPromptForm: React.FC<NewPromptFormProps> = (props) => {
         {currentExtractedVariables.length > 0 && (
           <PromptVariableListPreview variables={currentExtractedVariables} />
         )}
+
+        {projectId && <PromptModelFields projectId={projectId} />}
 
         {/* Prompt Config field */}
         <FormField

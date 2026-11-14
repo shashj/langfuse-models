@@ -119,6 +119,96 @@ describe("prompts trpc", () => {
     });
   });
 
+  describe("prompts.create with a registry model", () => {
+    const createRegistryModel = (projectId: string) =>
+      prisma.registryModel.create({
+        data: {
+          projectId,
+          provider: "openai",
+          modelId: `model-${v4()}`,
+          displayName: "Test model",
+        },
+      });
+
+    it("stores the model and its params, and keeps them when the prompt is duplicated", async () => {
+      const { project, caller } = await prepare();
+      const model = await createRegistryModel(project.id);
+      const name = `with-model-${v4()}`;
+
+      const created = await caller.prompts.create({
+        projectId: project.id,
+        name,
+        prompt: "Hello",
+        type: PromptType.Text,
+        labels: [],
+        config: {},
+        registryModelId: model.id,
+        modelParams: { temperature: 0.3, max_tokens: 256 },
+      });
+      const stored = await caller.prompts.byId({
+        projectId: project.id,
+        id: created.id,
+      });
+      expect(stored).toMatchObject({
+        registryModelId: model.id,
+        modelParams: { temperature: 0.3, max_tokens: 256 },
+      });
+
+      const duplicated = await caller.prompts.duplicatePrompt({
+        projectId: project.id,
+        promptId: created.id,
+        name: `${name}-copy`,
+        isSingleVersion: true,
+      });
+      expect(duplicated).toMatchObject({
+        registryModelId: model.id,
+        modelParams: { temperature: 0.3, max_tokens: 256 },
+      });
+    });
+
+    it("returns the registry model and params with the prompt meta used by experiments", async () => {
+      const { project, caller } = await prepare();
+      const model = await createRegistryModel(project.id);
+      const created = await caller.prompts.create({
+        projectId: project.id,
+        name: `meta-model-${v4()}`,
+        prompt: "Hello",
+        type: PromptType.Text,
+        labels: [],
+        config: {},
+        registryModelId: model.id,
+        modelParams: { temperature: 0.4 },
+      });
+
+      const meta = await caller.prompts.allPromptMeta({
+        projectId: project.id,
+      });
+
+      expect(meta.find((prompt) => prompt.id === created.id)).toMatchObject({
+        modelParams: { temperature: 0.4 },
+        registryModel: { provider: model.provider, modelId: model.modelId },
+      });
+    });
+
+    it("rejects a model that belongs to another project", async () => {
+      const { project, caller } = await prepare();
+      const { project: otherProject } = await createOrgProjectAndApiKey();
+      const foreignModel = await createRegistryModel(otherProject.id);
+
+      await expect(
+        caller.prompts.create({
+          projectId: project.id,
+          name: `foreign-model-${v4()}`,
+          prompt: "Hello",
+          type: PromptType.Text,
+          labels: [],
+          config: {},
+          registryModelId: foreignModel.id,
+        }),
+      ).rejects.toThrow(/registry model not found/i);
+    });
+  });
+
   describe("prompts.all input validation", () => {
     it.each([
       {

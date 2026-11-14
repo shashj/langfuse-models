@@ -6,17 +6,22 @@ import useLocalStorage from "@/src/components/useLocalStorage";
 import {
   LLMAdapter,
   supportedModels,
+  type ModelConfig,
   type ModelParams,
   type UIModelParams,
 } from "@langfuse/shared";
 import { type ModelParamsContext } from "@/src/components/ModelParameters";
 import { getModelNameKey, getModelProviderKey } from "../storage/keys";
 import { getEnabledModelParamState } from "@/src/utils/getFinalModelParams";
+import { getDefaultAdapterParams } from "../utils/defaultAdapterParams";
+import { buildPlaygroundModelParams } from "../utils/promptModelParams";
 
 type PromptConfigModel = {
   selectionKey?: string;
   provider?: string;
   model: string;
+  /** Parameters the prompt sets. Applied together with the model. */
+  params?: ModelConfig;
 };
 
 type UseModelParamsOptions = {
@@ -96,6 +101,15 @@ export const useModelParams = (
 
     return matchingApiKey?.provider;
   }, [availableLLMApiKeys.data?.data, promptConfigModel, promptConfigProvider]);
+
+  const promptConfigParams = options?.promptConfigModel?.params;
+  const promptConfigAdapter = useMemo(
+    () =>
+      availableLLMApiKeys.data?.data.find(
+        ({ provider }) => provider === resolvedPromptConfigProvider,
+      )?.adapter,
+    [availableLLMApiKeys.data?.data, resolvedPromptConfigProvider],
+  );
 
   const providerModelCombinations =
     availableLLMApiKeys.data?.data.reduce((acc, v) => {
@@ -237,6 +251,26 @@ export const useModelParams = (
       return;
     }
 
+    // A prompt that sets params brings the connection's adapter and the full
+    // adapter defaults with it. The adapter effect below resets the params
+    // whenever the adapter changes, so the adapter has to match from the start.
+    const hasParams =
+      promptConfigParams && Object.keys(promptConfigParams).length > 0;
+    if (hasParams && promptConfigAdapter) {
+      setModelParams((prev) => ({
+        ...prev,
+        ...buildPlaygroundModelParams(
+          {
+            provider: resolvedPromptConfigProvider,
+            model: promptConfigModel,
+            params: promptConfigParams,
+          },
+          promptConfigAdapter,
+        ),
+      }));
+      return;
+    }
+
     setModelParams((prev) => ({
       ...prev,
       provider: { value: resolvedPromptConfigProvider, enabled: true },
@@ -246,6 +280,8 @@ export const useModelParams = (
     promptConfigSelectionKey,
     promptConfigModel,
     resolvedPromptConfigProvider,
+    promptConfigAdapter,
+    promptConfigParams,
   ]);
 
   // Update adapter, max temperature, temperature, max_tokens, top_p when provider changes
@@ -301,109 +337,3 @@ export const useModelParams = (
     providerModelCombinations,
   };
 };
-
-function getDefaultAdapterParams(
-  adapter: LLMAdapter,
-): Omit<UIModelParams, "provider" | "model"> {
-  switch (adapter) {
-    // Docs: https://platform.openai.com/docs/api-reference/chat/create
-    case LLMAdapter.OpenAI:
-      return {
-        adapter: {
-          value: adapter,
-          enabled: true,
-        },
-        temperature: { value: 0, enabled: false },
-        maxTemperature: { value: 2, enabled: false },
-        max_tokens: { value: 4096, enabled: false },
-        top_p: { value: 1, enabled: false },
-        maxReasoningTokens: { value: 0, enabled: false },
-        providerOptions: { value: {}, enabled: false },
-      };
-
-    case LLMAdapter.Azure:
-      return {
-        adapter: {
-          value: adapter,
-          enabled: true,
-        },
-        temperature: { value: 0, enabled: false },
-        maxTemperature: { value: 2, enabled: false },
-        max_tokens: { value: 4096, enabled: false },
-        top_p: { value: 1, enabled: false },
-        maxReasoningTokens: { value: 0, enabled: false },
-        providerOptions: { value: {}, enabled: false },
-      };
-
-    // Docs: https://docs.anthropic.com/claude/reference/messages_post
-    case LLMAdapter.Anthropic:
-      return {
-        adapter: {
-          value: adapter,
-          enabled: true,
-        },
-        temperature: { value: 0, enabled: false },
-        maxTemperature: { value: 1, enabled: false },
-        max_tokens: { value: 4096, enabled: false },
-        top_p: { value: 1, enabled: false },
-        maxReasoningTokens: { value: 0, enabled: false },
-        providerOptions: { value: {}, enabled: false },
-      };
-
-    case LLMAdapter.Bedrock:
-      return {
-        adapter: {
-          value: adapter,
-          enabled: true,
-        },
-        temperature: { value: 0, enabled: false },
-        maxTemperature: { value: 1, enabled: false },
-        max_tokens: { value: 4096, enabled: false },
-        top_p: { value: 1, enabled: false },
-        maxReasoningTokens: { value: 0, enabled: false },
-        providerOptions: { value: {}, enabled: false },
-      };
-
-    case LLMAdapter.VertexAI:
-      return {
-        adapter: {
-          value: adapter,
-          enabled: true,
-        },
-        temperature: { value: 1, enabled: false },
-        maxTemperature: { value: 2, enabled: false },
-        max_tokens: { value: 4096, enabled: false },
-        top_p: { value: 1, enabled: false },
-        maxReasoningTokens: { value: 0, enabled: false },
-        providerOptions: { value: {}, enabled: false },
-      };
-
-    case LLMAdapter.GoogleAIStudio:
-      return {
-        adapter: {
-          value: adapter,
-          enabled: true,
-        },
-        temperature: { value: 1, enabled: false },
-        maxTemperature: { value: 2, enabled: false },
-        max_tokens: { value: 4096, enabled: false },
-        top_p: { value: 1, enabled: false },
-        maxReasoningTokens: { value: 0, enabled: false },
-        providerOptions: { value: {}, enabled: false },
-      };
-
-    case LLMAdapter.TypeSafe:
-      return {
-        adapter: {
-          value: adapter,
-          enabled: true,
-        },
-        temperature: { value: 0, enabled: false },
-        maxTemperature: { value: 0, enabled: false },
-        max_tokens: { value: 0, enabled: false },
-        top_p: { value: 1, enabled: false },
-        maxReasoningTokens: { value: 0, enabled: false },
-        providerOptions: { value: {}, enabled: false },
-      };
-  }
-}

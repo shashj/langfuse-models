@@ -383,6 +383,11 @@ const ModelParamsSelect = ({
   const providerSelect = useAddLlmConnectionSelect();
 
   const handleValueChange = (next: string) => {
+    // A provider or model is never empty. Radix Select reports an empty value
+    // when its controlled value is changed in code before its hidden native
+    // select has synced, which would wipe a model that was just set.
+    if (next === "") return;
+
     providerSelect.notifySelection();
     updateModelParam(
       modelParamsKey,

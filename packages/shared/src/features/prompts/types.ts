@@ -16,7 +16,10 @@ import {
   PROMPT_LABEL_REGEX,
   PROMPT_LABEL_REGEX_ERROR,
 } from "./constants";
-import { PromptChatMessageSchema } from "../../server/llm/types";
+import {
+  PromptChatMessageSchema,
+  ZodModelConfig,
+} from "../../server/llm/types";
 import { PromptNameSchema } from "./validation";
 
 export const SingleChatMessageSchema = PromptChatMessageSchema;
@@ -34,6 +37,28 @@ export const PromptLabelSchema = z
   .max(PROMPT_LABEL_MAX_LENGTH)
   .regex(PROMPT_LABEL_REGEX, PROMPT_LABEL_REGEX_ERROR);
 
+// The model a prompt version runs on: a registry model of the project, plus
+// per-version overrides of that model's default parameters.
+const PromptModelInputSchema = z.object({
+  registryModelId: z.string().nullish(),
+  modelParams: ZodModelConfig.nullish(),
+});
+
+// What a prompt read returns for the model: the stored fields, and the model
+// resolved from the registry with the effective parameters (the registry's
+// defaults with the version's overrides applied).
+const PromptModelResponseSchema = z.object({
+  registryModelId: z.string().nullish(),
+  modelParams: ZodModelConfig.nullish(),
+  model: z
+    .object({
+      provider: z.string(),
+      modelId: z.string(),
+      params: ZodModelConfig,
+    })
+    .nullish(),
+});
+
 const BaseCreateTextPromptSchema = z.object({
   name: PromptNameSchema,
   labels: z.array(PromptLabelSchema).default([]),
@@ -47,6 +72,7 @@ const LegacyCreateTextPromptSchema = BaseCreateTextPromptSchema;
 
 export const CreateTextPromptSchema = BaseCreateTextPromptSchema.extend({
   commitMessage: z.string().max(COMMIT_MESSAGE_MAX_LENGTH).nullish(),
+  ...PromptModelInputSchema.shape,
 });
 
 const BaseCreateChatPromptSchema = z.object({
@@ -62,6 +88,7 @@ const LegacyCreateChatPromptSchema = BaseCreateChatPromptSchema;
 
 export const CreateChatPromptSchema = BaseCreateChatPromptSchema.extend({
   commitMessage: z.string().max(COMMIT_MESSAGE_MAX_LENGTH).nullish(),
+  ...PromptModelInputSchema.shape,
 });
 
 export const CreatePromptSchema = z.union([
@@ -153,10 +180,15 @@ const LegacyTextPromptSchema = BaseTextPromptSchema;
 
 export const TextPromptSchema = BaseTextPromptSchema.extend({
   commitMessage: z.string().max(COMMIT_MESSAGE_MAX_LENGTH).nullish(),
+  ...PromptModelResponseSchema.shape,
 });
 
+// Compared against the database row without the model columns, because the
+// response schemas describe them differently (nullish, with a resolved model).
+type PublicPromptColumns = Omit<Prompt, "registryModelId" | "modelParams">;
+
 export type TextPromptType =
-  z.infer<typeof TextPromptSchema> extends Prompt
+  z.infer<typeof TextPromptSchema> extends PublicPromptColumns
     ? z.infer<typeof TextPromptSchema>
     : never;
 
@@ -179,10 +211,11 @@ const LegacyChatPromptSchema = BaseChatPromptSchema;
 
 export const ChatPromptSchema = BaseChatPromptSchema.extend({
   commitMessage: z.string().max(COMMIT_MESSAGE_MAX_LENGTH).nullish(),
+  ...PromptModelResponseSchema.shape,
 });
 
 export type ChatPromptType =
-  z.infer<typeof ChatPromptSchema> extends Prompt
+  z.infer<typeof ChatPromptSchema> extends PublicPromptColumns
     ? z.infer<typeof ChatPromptSchema>
     : never;
 

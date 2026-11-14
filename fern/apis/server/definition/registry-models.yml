@@ -1,0 +1,122 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/fern-api/fern/main/fern.schema.json
+imports:
+  pagination: ./utils/pagination.yml
+  prompts: ./prompts.yml
+service:
+  auth: true
+  base-path: /api/public
+  endpoints:
+    create:
+      method: POST
+      docs: Create a registry model. A prompt version can reference it by id to say which model it runs on.
+      path: /registry-models
+      request: CreateRegistryModelRequest
+      response: RegistryModel
+    list:
+      method: GET
+      docs: Get all registry models of the project
+      path: /registry-models
+      request:
+        name: GetRegistryModelsRequest
+        query-parameters:
+          page:
+            type: optional<integer>
+            docs: page number, starts at 1
+          limit:
+            type: optional<integer>
+            docs: limit of items per page
+      response: PaginatedRegistryModels
+    get:
+      method: GET
+      docs: Get a registry model
+      path: /registry-models/{id}
+      path-parameters:
+        id: string
+      response: RegistryModel
+    replace:
+      method: PUT
+      docs: Replace a registry model. Every writable field is set from the request, so fields that are left out are cleared.
+      path: /registry-models/{id}
+      path-parameters:
+        id: string
+      request: CreateRegistryModelRequest
+      response: RegistryModel
+    delete:
+      method: DELETE
+      docs: Delete a registry model. Fails if prompt versions still reference it.
+      path: /registry-models/{id}
+      path-parameters:
+        id: string
+      response: DeleteRegistryModelResponse
+
+types:
+  RegistryModelStatus:
+    enum:
+      - active
+      - deprecated
+
+  RegistryModelCapabilities:
+    docs: What the model supports. A field that is left out means unknown.
+    properties:
+      tools: optional<boolean>
+      vision: optional<boolean>
+      jsonMode: optional<boolean>
+      reasoning: optional<boolean>
+
+  RegistryModel:
+    properties:
+      id: string
+      provider:
+        type: string
+        docs: Name of the LLM connection that runs the model.
+      modelId:
+        type: string
+        docs: The model name as the provider expects it.
+      displayName: string
+      description: optional<string>
+      status: RegistryModelStatus
+      contextWindow:
+        type: optional<integer>
+        docs: Context window in tokens.
+      maxOutputTokens: optional<integer>
+      capabilities: RegistryModelCapabilities
+      defaultParams:
+        type: optional<prompts.PromptModelParams>
+        docs: Parameters that prompt versions using this model start from.
+      pricingModelId:
+        type: optional<string>
+        docs: ID of the model definition that prices this model, if linked.
+      createdAt: datetime
+      updatedAt: datetime
+
+  CreateRegistryModelRequest:
+    properties:
+      provider:
+        type: string
+        docs: Name of the LLM connection that runs the model. Together with `modelId` it is unique within the project.
+      modelId:
+        type: string
+        docs: The model name as the provider expects it.
+      displayName: string
+      description: optional<string>
+      status:
+        type: optional<RegistryModelStatus>
+        docs: Defaults to `active`.
+      contextWindow:
+        type: optional<integer>
+        docs: Context window in tokens.
+      maxOutputTokens: optional<integer>
+      capabilities: optional<RegistryModelCapabilities>
+      defaultParams: optional<prompts.PromptModelParams>
+      pricingModelId:
+        type: optional<string>
+        docs: ID of a model definition of this project, or a built-in one, that prices this model.
+
+  PaginatedRegistryModels:
+    properties:
+      data: list<RegistryModel>
+      meta: pagination.MetaResponse
+
+  DeleteRegistryModelResponse:
+    properties:
+      message: string
