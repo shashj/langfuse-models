@@ -20,7 +20,6 @@ const createCaller = async (
       org: { id: string; name: string };
     };
     projectRole?: "ADMIN" | "MEMBER";
-    admin?: boolean;
   } = {},
 ) => {
   const { project, org } =
@@ -31,7 +30,6 @@ const createCaller = async (
       id: `user-${randomUUID()}`,
       name: "Model Registry Test User",
       canCreateOrganizations: true,
-      admin: options.admin ?? true,
       organizations: [
         {
           id: org.id,
@@ -218,7 +216,6 @@ describe("model registry tRPC router", () => {
     const { caller: member } = await createCaller({
       existing: { project, org },
       projectRole: "MEMBER",
-      admin: false,
     });
 
     const { totalCount } = await member.modelRegistry.getAll({
