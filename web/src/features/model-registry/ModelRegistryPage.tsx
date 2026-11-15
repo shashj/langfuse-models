@@ -43,6 +43,16 @@ export default function ModelRegistryPage() {
     { enabled: Boolean(projectId), refetchOnWindowFocus: false },
   );
 
+  const registryIds = models.data?.models.map((model) => model.id) ?? [];
+  const usage = api.modelRegistry.usage.useQuery(
+    { projectId, ids: registryIds },
+    {
+      enabled: models.isSuccess && registryIds.length > 0,
+      refetchOnWindowFocus: false,
+      staleTime: 1000 * 60 * 5,
+    },
+  );
+
   const deleteModel = api.modelRegistry.delete.useMutation({
     onSuccess: () => utils.modelRegistry.invalidate(),
   });
@@ -108,6 +118,7 @@ export default function ModelRegistryPage() {
             {({ openDialog: openDeleteDialog }) => (
               <RegistryModelsTable
                 data={data}
+                usage={usage.isError ? {} : usage.data}
                 pagination={{
                   mode: "offset",
                   totalCount: models.data?.totalCount ?? null,
