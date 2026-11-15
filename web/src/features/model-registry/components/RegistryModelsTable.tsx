@@ -10,6 +10,7 @@ import { createDateTableColumn } from "@/src/components/design-system/table/colu
 import { createNumberTableColumn } from "@/src/components/design-system/table/columns/createNumberTableColumn";
 import { createTextTableColumn } from "@/src/components/design-system/table/columns/createTextTableColumn";
 import { type LangfuseColumnDef } from "@/src/components/table/types";
+import { numberFormatter } from "@/src/utils/numbers";
 import {
   REGISTRY_USAGE_WINDOW_DAYS,
   type RegistryModelUsage,
@@ -112,6 +113,7 @@ function getColumns(
       header: `Generations, ${REGISTRY_USAGE_WINDOW_DAYS}d`,
       headerTooltip: { description: USAGE_DESCRIPTION },
       emptyValue: NOT_LINKED_TO_PRICING,
+      formatter: (count) => numberFormatter(count, 0),
       size: 130,
       enableHiding: true,
       getValue: (_, { row }) => {
