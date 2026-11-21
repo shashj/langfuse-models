@@ -1,11 +1,11 @@
-import { useId, useMemo } from "react";
+import { useId, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import { Dialog } from "@/src/components/design-system/Dialog/Dialog";
 import { Form } from "@/src/components/design-system/Form/Form";
-import { SelectInput } from "@/src/components/design-system/SelectInput/SelectInput";
+import { AsyncSelectInput } from "@/src/components/design-system/AsyncSelectInput/AsyncSelectInput";
 import { SwitchInput } from "@/src/components/design-system/SwitchInput/SwitchInput";
 import { showSuccessToast } from "@/src/features/notifications/showSuccessToast";
 import {
@@ -14,9 +14,11 @@ import {
   REGISTRY_MODEL_STATUSES,
   type RegistryModelRow,
 } from "@/src/features/model-registry/validation";
+import { useDebounce } from "@/src/hooks/useDebounce";
 import { api } from "@/src/utils/api";
 
 const NO_PRICING = "none";
+const NOT_LINKED_LABEL = "Not linked";
 
 const CAPABILITY_DESCRIPTIONS: Record<
   (typeof CAPABILITY_KEYS)[number],
@@ -98,19 +100,28 @@ export function UpsertRegistryModelDialog({
     defaultValues: toFormValues(model),
   });
 
+  // There are hundreds of model definitions, so the list is searched on the server. A search
+  // that only filtered the first page would never reach definitions further down the alphabet.
+  const [pricingSearch, setPricingSearch] = useState("");
+  const [pricingQuery, setPricingQuery] = useState("");
+  const applyPricingQuery = useDebounce(setPricingQuery, 300);
+  const [selectedPricing, setSelectedPricing] = useState({
+    value: model?.pricingModel?.id ?? NO_PRICING,
+    label: model?.pricingModel?.modelName ?? NOT_LINKED_LABEL,
+  });
   const pricingModels = api.models.getAll.useQuery(
-    { projectId, searchString: "", page: 0, limit: 100 },
+    { projectId, searchString: pricingQuery, page: 0, limit: 100 },
     { refetchOnWindowFocus: false },
   );
   const pricingOptions = useMemo(
     () => [
-      { value: NO_PRICING, label: "Not linked" },
+      ...(pricingQuery ? [] : [{ value: NO_PRICING, label: NOT_LINKED_LABEL }]),
       ...(pricingModels.data?.models ?? []).map((pricing) => ({
         value: pricing.id,
         label: pricing.modelName,
       })),
     ],
-    [pricingModels.data],
+    [pricingModels.data, pricingQuery],
   );
 
   const upsert = api.modelRegistry.upsert.useMutation({
@@ -274,14 +285,29 @@ export function UpsertRegistryModelDialog({
             description="Link to a model definition to track cost."
           >
             {(field) => (
-              <SelectInput<string>
+              <AsyncSelectInput<string>
                 id={field.id}
-                value={field.value}
-                onValueChange={field.onChange}
+                value={selectedPricing}
+                onValueChange={(option) => {
+                  setSelectedPricing(option);
+                  field.onChange(option.value);
+                }}
                 onBlur={field.onBlur}
                 options={pricingOptions}
                 placeholder="Select a model definition"
-                search={{ placeholder: "Search model definitions" }}
+                search={{
+                  placeholder: "Search model definitions",
+                  value: pricingSearch,
+                  onValueChange: (value) => {
+                    setPricingSearch(value);
+                    applyPricingQuery(value);
+                  },
+                }}
+                loading={
+                  pricingModels.isFetching
+                    ? { message: "Searching model definitions" }
+                    : undefined
+                }
                 aria-describedby={field.inputDescribedById}
               />
             )}

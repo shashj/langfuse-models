@@ -311,6 +311,7 @@ export const modelRegistryRouter = createTRPCRouter({
       return getRegistryModelUsage({
         projectId: input.projectId,
         registryModelIds: input.ids,
+        source: ctx.session.user?.v4BetaEnabled ? "events" : "observations",
       });
     }),
 });
