@@ -1,4 +1,4 @@
-import { Pencil, Trash } from "@langfuse/icons";
+import { Pencil, SquareArrowOutUpRight, Trash } from "@langfuse/icons";
 import {
   SettingsTable,
   type SettingsTableProps,
@@ -134,6 +134,7 @@ export function RegistryModelsTable({
   canEdit,
   onEdit,
   onDelete,
+  onViewGenerations,
 }: {
   data: TableProps<RegistryModelRow>["data"];
   usage?: Record<string, RegistryModelUsage>;
@@ -143,6 +144,7 @@ export function RegistryModelsTable({
   canEdit: boolean;
   onEdit: (model: RegistryModelRow) => void;
   onDelete: (model: RegistryModelRow) => void;
+  onViewGenerations: (model: RegistryModelRow) => void;
 }) {
   const noAccess = { reason: "You do not have permission to change models" };
 
@@ -159,6 +161,16 @@ export function RegistryModelsTable({
       toolbarActions={toolbarActions}
       onRowClick={onEdit}
       actions={(model) => [
+        {
+          id: "view-generations",
+          type: "item",
+          title: "View generations",
+          icon: SquareArrowOutUpRight,
+          disabled: model.pricingModel
+            ? undefined
+            : { reason: "Link a pricing model to see generations" },
+          onClick: () => onViewGenerations(model),
+        },
         {
           id: "edit",
           type: "item",

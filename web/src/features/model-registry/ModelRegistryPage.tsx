@@ -7,6 +7,8 @@ import Page from "@/src/components/layouts/Page";
 import { ConfirmationDialogController } from "@/src/components/design-system/ConfirmationDialogController/ConfirmationDialogController";
 import { DialogController } from "@/src/components/design-system/DialogController/DialogController";
 import { type AsyncTableData } from "@/src/components/design-system/table/Table";
+import { useReadPath } from "@/src/features/events/hooks/useReadPath";
+import { getRegistryModelGenerationsHref } from "@/src/features/model-registry/getGenerationsHref";
 import { RegistryModelsTable } from "@/src/features/model-registry/components/RegistryModelsTable";
 import { UpsertRegistryModelDialog } from "@/src/features/model-registry/components/UpsertRegistryModelDialog";
 import { type RegistryModelRow } from "@/src/features/model-registry/validation";
@@ -20,6 +22,7 @@ export default function ModelRegistryPage() {
   const router = useRouter();
   const projectId = router.query.projectId as string;
   const utils = api.useUtils();
+  const { isV4 } = useReadPath();
 
   const [paginationState, setPaginationState] = usePaginationState(0, 50, {
     page: "pageIndex",
@@ -131,6 +134,16 @@ export default function ModelRegistryPage() {
                 }}
                 canEdit={hasWriteAccess}
                 onEdit={(model) => openDialog({ model })}
+                onViewGenerations={(model) => {
+                  if (!model.pricingModel) return;
+                  router.push(
+                    getRegistryModelGenerationsHref({
+                      projectId,
+                      pricingModelId: model.pricingModel.id,
+                      isV4,
+                    }),
+                  );
+                }}
                 onDelete={(model) => {
                   deleteModel.reset();
                   openDeleteDialog(model);
