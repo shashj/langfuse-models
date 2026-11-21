@@ -264,6 +264,11 @@ export const modelRegistryRouter = createTRPCRouter({
         projectId: z.string(),
         ids: z.array(z.string()).max(100).default([]),
         pricingModelIds: z.array(z.string()).max(100).default([]),
+        // Entries by `(provider, modelId)`, for runs that did not store a registry id.
+        pairs: z
+          .array(z.object({ provider: z.string(), modelId: z.string() }))
+          .max(100)
+          .default([]),
       }),
     )
     .query(async ({ input, ctx }) => {
@@ -277,6 +282,7 @@ export const modelRegistryRouter = createTRPCRouter({
         ...(input.pricingModelIds.length > 0
           ? [{ pricingModelId: { in: input.pricingModelIds } }]
           : []),
+        ...input.pairs.map(({ provider, modelId }) => ({ provider, modelId })),
       ];
       if (matchers.length === 0) return [];
 
@@ -284,6 +290,7 @@ export const modelRegistryRouter = createTRPCRouter({
         where: { projectId: input.projectId, OR: matchers },
         select: {
           id: true,
+          provider: true,
           displayName: true,
           modelId: true,
           pricingModelId: true,

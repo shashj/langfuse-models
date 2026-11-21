@@ -34,6 +34,7 @@ import { api } from "@/src/utils/api";
 import { CardDescription } from "@/src/components/ui/card";
 import { cn } from "@/src/utils/tailwind";
 import { type PromptModelStepProps } from "@/src/features/experiments/types/stepProps";
+import { RegistryModelSelect } from "@/src/features/model-registry/components/RegistryModelSelect";
 import { StepHeader } from "@/src/features/experiments/components/shared/StepHeader";
 import { toPromptLabelListItems } from "@/src/features/prompts/utils";
 import { LabelList } from "@/src/components/design-system/LabelList/LabelList";
@@ -61,6 +62,7 @@ export const PromptModelStep: React.FC<PromptModelStepProps> = ({
     availableModels,
     providerModelCombinations,
     availableProviders,
+    registryModel,
   } = modelState;
   const {
     structuredOutputEnabled,
@@ -282,6 +284,19 @@ export const PromptModelStep: React.FC<PromptModelStepProps> = ({
           </FormItem>
         )}
       />
+
+      <div className="flex flex-col gap-2">
+        <FormLabel>Registry model</FormLabel>
+        <RegistryModelSelect
+          projectId={projectId}
+          value={registryModel.value}
+          onSelect={registryModel.onSelect}
+        />
+        <CardDescription>
+          Start from a model in your registry. Its connection, defaults and
+          capabilities fill the model fields below, which you can still change.
+        </CardDescription>
+      </div>
 
       <FormField
         control={form.control}

@@ -24,12 +24,16 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { api } from "@/src/utils/api";
 import { classifyTrpcToastError } from "@/src/utils/trpcErrorClassification";
+import { type RegistryModelRow } from "@/src/features/model-registry/validation";
 import { useModelParams } from "@/src/features/playground/page/hooks/useModelParams";
 import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePostHogClientCapture";
 import { useEvaluatorDefaults } from "@/src/features/experiments/hooks/useEvaluatorDefaults";
 import { useExperimentEvaluatorData } from "@/src/features/experiments/hooks/useExperimentEvaluatorData";
 import { useExperimentNameValidation } from "@/src/features/experiments/hooks/useExperimentNameValidation";
-import { useExperimentPromptData } from "@/src/features/experiments/hooks/useExperimentPromptData";
+import {
+  type ExperimentPromptModelConfig,
+  useExperimentPromptData,
+} from "@/src/features/experiments/hooks/useExperimentPromptData";
 import { getExistingEvaluators } from "@/src/features/experiments/hooks/useExperimentEvaluatorSelection";
 import { useExperimentV2EvaluatorSelection } from "@/src/features/experiments/hooks/useExperimentV2EvaluatorSelection";
 import { getFinalModelParams } from "@/src/utils/getFinalModelParams";
@@ -59,6 +63,7 @@ import {
   hasPromptToolStructuredOutputConflict,
   PROMPT_TOOL_STRUCTURED_OUTPUT_CONFLICT_MESSAGE,
   PromptType,
+  type ModelConfig,
 } from "@langfuse/shared";
 
 const LegacyExperimentNameValidation = ({
@@ -77,6 +82,84 @@ const LegacyExperimentNameValidation = ({
   });
 
   return null;
+};
+
+type RegistryChoice = {
+  promptId: string;
+  entry: RegistryModelRow | null;
+};
+
+/** The model the form hands to the model params hook: the picked entry, or the prompt's own. */
+function toConfigModel({
+  chosen,
+  promptId,
+  promptModel,
+}: {
+  chosen: RegistryChoice | null;
+  promptId: string;
+  promptModel: ExperimentPromptModelConfig | null;
+}): PromptConfigModel | null {
+  if (chosen) {
+    // "Other model" (no entry) leaves the model fields as they are.
+    if (!chosen.entry) return null;
+    return {
+      selectionKey: `registry:${chosen.entry.id}`,
+      provider: chosen.entry.provider,
+      model: chosen.entry.modelId,
+      ...(chosen.entry.defaultParams
+        ? { params: chosen.entry.defaultParams }
+        : {}),
+    };
+  }
+  if (!promptModel) return null;
+  return {
+    selectionKey: promptId,
+    ...(promptModel.provider ? { provider: promptModel.provider } : {}),
+    model: promptModel.model,
+    ...(promptModel.params ? { params: promptModel.params } : {}),
+  };
+}
+
+type RegistryRef = {
+  id: string;
+  provider: string;
+  model: string;
+  label: string;
+};
+
+/** The registry entry the run starts from: the one picked, or the selected prompt's own. */
+function toRegistryRef({
+  chosen,
+  promptRegistryModelId,
+  promptModel,
+}: {
+  chosen: RegistryChoice | null;
+  promptRegistryModelId: string | null;
+  promptModel: ExperimentPromptModelConfig | null;
+}): RegistryRef | null {
+  if (chosen) {
+    if (!chosen.entry) return null;
+    return {
+      id: chosen.entry.id,
+      provider: chosen.entry.provider,
+      model: chosen.entry.modelId,
+      label: chosen.entry.displayName,
+    };
+  }
+  if (!promptRegistryModelId || !promptModel?.provider) return null;
+  return {
+    id: promptRegistryModelId,
+    provider: promptModel.provider,
+    model: promptModel.model,
+    label: `${promptModel.provider}/${promptModel.model}`,
+  };
+}
+
+type PromptConfigModel = {
+  selectionKey?: string;
+  provider?: string;
+  model: string;
+  params?: ModelConfig;
 };
 
 export const MultiStepExperimentForm = ({
@@ -220,10 +303,25 @@ export const MultiStepExperimentForm = ({
     promptsByName,
     expectedColumns,
     selectedPromptModelConfig,
+    selectedPromptRegistryModelId,
     selectedPromptToolConfig,
   } = useExperimentPromptData({
     projectId,
     form,
+  });
+
+  // The registry model the user picked for the selected prompt. A choice belongs to one prompt:
+  // selecting another prompt brings back that prompt's own model.
+  const [registryChoice, setRegistryChoice] = useState<RegistryChoice | null>(
+    null,
+  );
+  const chosen =
+    registryChoice?.promptId === promptIdFromHook ? registryChoice : null;
+
+  const configModel = toConfigModel({
+    chosen,
+    promptId: promptIdFromHook,
+    promptModel: selectedPromptModelConfig,
   });
 
   const {
@@ -233,20 +331,23 @@ export const MultiStepExperimentForm = ({
     availableModels,
     providerModelCombinations,
     availableProviders,
-  } = useModelParams(undefined, {
-    promptConfigModel: selectedPromptModelConfig
-      ? {
-          selectionKey: promptIdFromHook,
-          ...(selectedPromptModelConfig.provider
-            ? { provider: selectedPromptModelConfig.provider }
-            : {}),
-          model: selectedPromptModelConfig.model,
-          ...(selectedPromptModelConfig.params
-            ? { params: selectedPromptModelConfig.params }
-            : {}),
-        }
-      : null,
+  } = useModelParams(undefined, { promptConfigModel: configModel });
+
+  // The registry entry the run starts from: the one picked, or the prompt's own. It counts only
+  // while the model that will run is still that entry's model, so editing the fields below
+  // detaches it and the run stores just provider and model.
+  const registryRef = toRegistryRef({
+    chosen,
+    promptRegistryModelId: selectedPromptRegistryModelId,
+    promptModel: selectedPromptModelConfig,
   });
+  const activeRegistryModel =
+    registryRef &&
+    registryRef.provider === modelParams.provider.value &&
+    registryRef.model === modelParams.model.value
+      ? registryRef
+      : null;
+  const registryModelId = activeRegistryModel?.id;
 
   // Watch model config changes and update form
   useEffect(() => {
@@ -254,13 +355,14 @@ export const MultiStepExperimentForm = ({
       provider: modelParams.provider.value,
       model: modelParams.model.value,
       modelParams: getFinalModelParams(modelParams),
+      registryModelId,
     });
 
     // Clear errors when valid values are set
     if (modelParams.provider.value && modelParams.model.value) {
       form.clearErrors("modelConfig");
     }
-  }, [modelParams, form]);
+  }, [modelParams, registryModelId, form]);
 
   const experimentMutation = api.experiments.createExperiment.useMutation({
     onSuccess: handleExperimentSuccess ?? (() => {}),
@@ -531,6 +633,13 @@ export const MultiStepExperimentForm = ({
     availableModels,
     providerModelCombinations,
     availableProviders,
+    registryModel: {
+      value: activeRegistryModel
+        ? { id: activeRegistryModel.id, label: activeRegistryModel.label }
+        : null,
+      onSelect: (entry: RegistryModelRow | null) =>
+        setRegistryChoice({ promptId: promptIdFromHook, entry }),
+    },
   };
   const structuredOutputState = {
     structuredOutputEnabled,

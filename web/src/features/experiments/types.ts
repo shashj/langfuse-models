@@ -15,6 +15,7 @@ export const CreateExperimentData = z.object({
     provider: z.string().min(1, "Please select a provider"),
     model: z.string().min(1, "Please select a model"),
     modelParams: ZodModelConfig,
+    registryModelId: z.string().optional(),
   }),
   structuredOutputSchema: z.record(z.string(), z.unknown()).optional(),
 });

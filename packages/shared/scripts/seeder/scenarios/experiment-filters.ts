@@ -13,6 +13,14 @@ import { chunk, ScenarioDefinition, SeedError, SeedSummary } from "./types";
 import { countRows } from "./verify";
 
 const RUN_NAMES = ["Filter A", "Filter B", "Filter C"];
+// The model each run ran on, as the experiment form stores it. Run 1 can only be matched to a
+// registry entry by provider and model, run 2 also stores its registry id when that entry exists,
+// and run 3 uses a model no registry entry has.
+const RUN_MODELS = [
+  { provider: "openai", model: "gpt-4o-mini", storesRegistryId: false },
+  { provider: "openai", model: "gpt-4o", storesRegistryId: true },
+  { provider: "acme", model: "house-model-v1", storesRegistryId: false },
+] as const;
 const LEVELS = ["DEFAULT", "WARNING", "ERROR"] as const;
 const QUALITY = [0.2, 0.45, 0.65, 0.85, 0.95, null];
 const VERDICTS = ["pass", "review", "fail"];
@@ -20,7 +28,7 @@ const VERDICTS = ["pass", "review", "fail"];
 export const experimentFiltersScenario: ScenarioDefinition = {
   name: "experiment-filters",
   description:
-    "Three v4 experiments over 60 items, with shifted numeric, categorical and boolean scores, status and metadata. Filter C misses every sixth item; each run omits every sixth quality score.",
+    "Three v4 experiments over 60 items, with shifted numeric, categorical and boolean scores, status and metadata, and the provider and model each ran on (one by registry id when its entry exists, one only by provider and model, one with an unregistered model). Filter C misses every sixth item; each run omits every sixth quality score.",
   supportsV4: true,
   flags: [
     {
@@ -77,6 +85,33 @@ export const experimentFiltersScenario: ScenarioDefinition = {
     }));
     const events: EventRecordInsertType[] = [];
     const scores: ScoreRecordInsertType[] = [];
+    const registryModels = await prisma.registryModel.findMany({
+      where: {
+        projectId: ctx.projectId,
+        OR: RUN_MODELS.map(({ provider, model }) => ({
+          provider,
+          modelId: model,
+        })),
+      },
+      select: { id: true, provider: true, modelId: true },
+    });
+    const experimentMetadata = RUN_MODELS.map((run) => {
+      const registryId = run.storesRegistryId
+        ? registryModels.find(
+            (entry) =>
+              entry.provider === run.provider && entry.modelId === run.model,
+          )?.id
+        : undefined;
+      // Names stay sorted, like ClickHouse stores a metadata map.
+      return {
+        names: [
+          "model",
+          "provider",
+          ...(registryId ? ["registry_model_id"] : []),
+        ],
+        values: [run.model, run.provider, ...(registryId ? [registryId] : [])],
+      };
+    });
 
     for (const [runIndex, experimentId] of experimentIds.entries()) {
       for (const [itemIndex, item] of items.entries()) {
@@ -120,6 +155,8 @@ export const experimentFiltersScenario: ScenarioDefinition = {
             metadata_values: [approved ? "eu" : "us", RUN_NAMES[runIndex]],
             experiment_id: experimentId,
             experiment_name: RUN_NAMES[runIndex],
+            experiment_metadata_names: experimentMetadata[runIndex].names,
+            experiment_metadata_values: experimentMetadata[runIndex].values,
             experiment_dataset_id: datasetId,
             experiment_item_id: item.id,
             experiment_item_version: toClickhouseDateTime(validFrom),

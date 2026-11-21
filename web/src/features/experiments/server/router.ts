@@ -228,6 +228,8 @@ export const experimentsRouter = createTRPCRouter({
           provider: z.string().min(1, "Please select a provider"),
           model: z.string().min(1, "Please select a model"),
           modelParams: ZodModelConfig,
+          // Set when the model was chosen from the project's model registry.
+          registryModelId: z.string().optional(),
         }),
         structuredOutputSchema: z.record(z.string(), z.any()).optional(),
       }),
@@ -252,6 +254,20 @@ export const experimentsRouter = createTRPCRouter({
         }
       }
 
+      if (input.modelConfig.registryModelId) {
+        // A registry id from another project must never end up on this run.
+        const registryModel = await ctx.prisma.registryModel.findFirst({
+          where: {
+            id: input.modelConfig.registryModelId,
+            projectId: input.projectId,
+          },
+          select: { id: true },
+        });
+        if (!registryModel) {
+          throw new InvalidRequestError("Registry model not found");
+        }
+      }
+
       if (!redis) {
         throw new UnauthorizedError("Experiment creation failed");
       }
@@ -260,6 +276,9 @@ export const experimentsRouter = createTRPCRouter({
         prompt_id: input.promptId,
         provider: input.modelConfig.provider,
         model: input.modelConfig.model,
+        ...(input.modelConfig.registryModelId && {
+          registry_model_id: input.modelConfig.registryModelId,
+        }),
         model_params: input.modelConfig.modelParams,
         ...(input.structuredOutputSchema && {
           structured_output_schema: input.structuredOutputSchema,

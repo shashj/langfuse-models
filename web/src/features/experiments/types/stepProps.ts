@@ -1,4 +1,5 @@
 import { type UseFormReturn } from "react-hook-form";
+import { type RegistryModelRow } from "@/src/features/model-registry/validation";
 import { type CreateExperiment } from "@/src/features/experiments/types";
 import { type UIModelParams } from "@langfuse/shared/src/server";
 import { type ModelParamsContext } from "@/src/components/ModelParameters";
@@ -65,6 +66,11 @@ type ModelState = {
   availableModels: string[];
   providerModelCombinations: string[];
   availableProviders: string[];
+  /** The registry model the run starts from, or null when the model is picked below. */
+  registryModel: {
+    value: { id: string; label: string } | null;
+    onSelect: (entry: RegistryModelRow | null) => void;
+  };
 };
 
 type StructuredOutputState = {
