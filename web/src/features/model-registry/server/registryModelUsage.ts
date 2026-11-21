@@ -20,6 +20,37 @@ const UsageQueryResult = z.array(
 );
 
 /**
+ * Where generations are read from. Langfuse v4 writes them only to the events tables, so a v4
+ * user must read `events_core`. The legacy `observations` table stays empty for that data.
+ */
+export type RegistryUsageSource = "events" | "observations";
+
+const USAGE_QUERY: Record<RegistryUsageSource, string> = {
+  observations: `
+      SELECT
+        internal_model_id AS modelId,
+        MAX(start_time) AS lastUsed,
+        uniqExactIf(id, start_time >= {since: DateTime64(3)}) AS generationsInWindow
+      FROM observations
+      WHERE project_id = {projectId: String}
+        AND type = 'GENERATION'
+        AND internal_model_id IN ({modelIds: Array(String)})
+      GROUP BY internal_model_id
+    `,
+  events: `
+      SELECT
+        model_id AS modelId,
+        MAX(start_time) AS lastUsed,
+        uniqExactIf(span_id, start_time >= {since: DateTime64(3)}) AS generationsInWindow
+      FROM events_core
+      WHERE project_id = {projectId: String}
+        AND type = 'GENERATION'
+        AND model_id IN ({modelIds: Array(String)})
+      GROUP BY model_id
+    `,
+};
+
+/**
  * Generation usage per registry model, keyed by registry id.
  *
  * A registry entry is joined to observations through its pricing link: the
@@ -30,8 +61,9 @@ const UsageQueryResult = z.array(
 export async function getRegistryModelUsage(params: {
   projectId: string;
   registryModelIds: string[];
+  source: RegistryUsageSource;
 }): Promise<Record<string, RegistryModelUsage>> {
-  const { projectId, registryModelIds } = params;
+  const { projectId, registryModelIds, source } = params;
   if (registryModelIds.length === 0) return {};
 
   const entries = await prisma.registryModel.findMany({
@@ -49,17 +81,7 @@ export async function getRegistryModelUsage(params: {
     Date.now() - REGISTRY_USAGE_WINDOW_DAYS * 24 * 60 * 60 * 1000,
   );
   const rows = await queryClickhouse({
-    query: `
-      SELECT
-        internal_model_id AS modelId,
-        MAX(start_time) AS lastUsed,
-        uniqExactIf(id, start_time >= {since: DateTime64(3)}) AS generationsInWindow
-      FROM observations
-      WHERE project_id = {projectId: String}
-        AND type = 'GENERATION'
-        AND internal_model_id IN ({modelIds: Array(String)})
-      GROUP BY internal_model_id
-    `,
+    query: USAGE_QUERY[source],
     params: {
       projectId,
       modelIds: linked.map((entry) => entry.pricingModelId),

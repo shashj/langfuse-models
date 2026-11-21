@@ -7,6 +7,8 @@ import { prisma } from "@langfuse/shared/src/db";
 import { appRouter } from "@/src/server/api/root";
 import { createInnerTRPCContext } from "@/src/server/api/trpc";
 import {
+  createEvent,
+  createEventsCh,
   createObservation,
   createObservationsCh,
   createOrgProjectAndApiKey,
@@ -22,12 +24,17 @@ const createCaller = async (
       org: { id: string; name: string };
     };
     projectRole?: "ADMIN" | "MEMBER";
+    v4BetaEnabled?: boolean;
   } = {},
 ) => {
   const { project, org } =
     options.existing ?? (await createOrgProjectAndApiKey({ plan: "Team" }));
   const session: Session = createSession({
-    user: { id: `user-${randomUUID()}`, name: "Model Registry Test User" },
+    user: {
+      id: `user-${randomUUID()}`,
+      name: "Model Registry Test User",
+      v4BetaEnabled: options.v4BetaEnabled ?? false,
+    },
     organizations: [
       {
         id: org.id,
@@ -337,5 +344,64 @@ describe("model registry tRPC router", () => {
       pricingModelIds: [pricing.id],
     });
     expect(found.map((row) => row.id)).toEqual([linked.id]);
+  });
+
+  it("reads usage from the events table for a v4 user and the legacy table otherwise", async () => {
+    // Langfuse v4 writes generations only to the events tables, so the legacy table is empty.
+    const v4 = await createCaller({ v4BetaEnabled: true });
+    const legacy = await createCaller({
+      existing: { project: v4.project, org: v4.org },
+    });
+    const projectId = v4.projectId;
+    const pricing = await prisma.model.create({
+      data: {
+        scope: "PROJECT",
+        projectId,
+        modelName: `pricing-${randomUUID()}`,
+        matchPattern: "x",
+      },
+    });
+    const entry = await v4.caller.modelRegistry.upsert(
+      baseModel(projectId, { pricingModelId: pricing.id }),
+    );
+
+    const now = Date.now();
+    const day = 24 * 60 * 60 * 1000;
+    await createEventsCh([
+      createEvent({
+        project_id: projectId,
+        model_id: pricing.id,
+        start_time: now - day,
+      }),
+      createEvent({
+        project_id: projectId,
+        model_id: pricing.id,
+        start_time: now - 2 * day,
+      }),
+      createEvent({
+        project_id: projectId,
+        model_id: pricing.id,
+        start_time: now - 90 * day,
+      }),
+    ]);
+    await createObservationsCh([
+      createObservation({
+        project_id: projectId,
+        internal_model_id: pricing.id,
+        start_time: now - day,
+      }),
+    ]);
+
+    const fromEvents = await v4.caller.modelRegistry.usage({
+      projectId,
+      ids: [entry.id],
+    });
+    const fromObservations = await legacy.caller.modelRegistry.usage({
+      projectId,
+      ids: [entry.id],
+    });
+
+    expect(fromEvents[entry.id].generationsInWindow).toBe(2);
+    expect(fromObservations[entry.id].generationsInWindow).toBe(1);
   });
 });
