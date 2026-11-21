@@ -8,6 +8,7 @@ import { ConfirmationDialogController } from "@/src/components/design-system/Con
 import { DialogController } from "@/src/components/design-system/DialogController/DialogController";
 import { type AsyncTableData } from "@/src/components/design-system/table/Table";
 import { useReadPath } from "@/src/features/events/hooks/useReadPath";
+import { getRegistryModelExperimentsHref } from "@/src/features/model-registry/getExperimentsHref";
 import { getRegistryModelGenerationsHref } from "@/src/features/model-registry/getGenerationsHref";
 import { RegistryModelsTable } from "@/src/features/model-registry/components/RegistryModelsTable";
 import { UpsertRegistryModelDialog } from "@/src/features/model-registry/components/UpsertRegistryModelDialog";
@@ -51,6 +52,16 @@ export default function ModelRegistryPage() {
     { projectId, ids: registryIds },
     {
       enabled: models.isSuccess && registryIds.length > 0,
+      refetchOnWindowFocus: false,
+      staleTime: 1000 * 60 * 5,
+    },
+  );
+
+  // Experiments are read from the events table, so they exist only on the v4 read path.
+  const experimentUsage = api.modelRegistry.experimentUsage.useQuery(
+    { projectId, ids: registryIds },
+    {
+      enabled: isV4 && models.isSuccess && registryIds.length > 0,
       refetchOnWindowFocus: false,
       staleTime: 1000 * 60 * 5,
     },
@@ -122,6 +133,10 @@ export default function ModelRegistryPage() {
               <RegistryModelsTable
                 data={data}
                 usage={usage.isError ? {} : usage.data}
+                experimentUsage={
+                  isV4 && !experimentUsage.isError ? experimentUsage.data : null
+                }
+                canViewExperiments={isV4}
                 pagination={{
                   mode: "offset",
                   totalCount: models.data?.totalCount ?? null,
@@ -134,6 +149,15 @@ export default function ModelRegistryPage() {
                 }}
                 canEdit={hasWriteAccess}
                 onEdit={(model) => openDialog({ model })}
+                onViewExperiments={(model) =>
+                  router.push(
+                    getRegistryModelExperimentsHref({
+                      projectId,
+                      provider: model.provider,
+                      modelId: model.modelId,
+                    }),
+                  )
+                }
                 onViewGenerations={(model) => {
                   if (!model.pricingModel) return;
                   router.push(

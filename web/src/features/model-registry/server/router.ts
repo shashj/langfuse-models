@@ -10,6 +10,7 @@ import {
   registryModelInclude,
   toRegistryModelRow,
 } from "@/src/features/model-registry/server/mapRegistryModel";
+import { getRegistryExperimentUsage } from "@/src/features/model-registry/server/registryExperimentUsage";
 import { getRegistryModelUsage } from "@/src/features/model-registry/server/registryModelUsage";
 import {
   removeRegistryModel,
@@ -319,6 +320,33 @@ export const modelRegistryRouter = createTRPCRouter({
         projectId: input.projectId,
         registryModelIds: input.ids,
         source: ctx.session.user?.v4BetaEnabled ? "events" : "observations",
+      });
+    }),
+
+  /**
+   * Experiments and datasets per registry entry in the last 30 days, matched by the registry id
+   * an experiment stored or by its provider and model.
+   */
+  experimentUsage: protectedProjectProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        ids: z.array(z.string()).max(200),
+      }),
+    )
+    .query(async ({ input, ctx }) => {
+      throwIfCannotReadRegistry({
+        session: ctx.session,
+        projectId: input.projectId,
+      });
+      throwIfNoProjectAccess({
+        session: ctx.session,
+        projectId: input.projectId,
+        scope: "promptExperiments:read",
+      });
+      return getRegistryExperimentUsage({
+        projectId: input.projectId,
+        registryModelIds: input.ids,
       });
     }),
 });

@@ -1,4 +1,4 @@
-import { Pencil, SquareArrowOutUpRight, Trash } from "@langfuse/icons";
+import { Beaker, Pencil, SquareArrowOutUpRight, Trash } from "@langfuse/icons";
 import {
   SettingsTable,
   type SettingsTableProps,
@@ -13,6 +13,7 @@ import { type LangfuseColumnDef } from "@/src/components/table/types";
 import { numberFormatter } from "@/src/utils/numbers";
 import {
   REGISTRY_USAGE_WINDOW_DAYS,
+  type RegistryExperimentUsage,
   type RegistryModelUsage,
 } from "@/src/features/model-registry/usage";
 import {
@@ -25,9 +26,15 @@ const NOT_LINKED_TO_PRICING = "Link pricing";
 const USAGE_DESCRIPTION =
   "Usage is read from generations that match this model's linked pricing. Link a pricing model to see it.";
 
-/** `usage` is undefined while loading, and has no entry for unlinked models. */
+const EXPERIMENT_USAGE_DESCRIPTION = `Experiments run in the last ${REGISTRY_USAGE_WINDOW_DAYS} days on this model. An experiment counts for the registry model it started from, or for the provider and model it ran on.`;
+
+/**
+ * `usage` is undefined while loading, and has no entry for unlinked models. `experimentUsage` is
+ * undefined while loading and null when experiment usage is not available.
+ */
 function getColumns(
   usage: Record<string, RegistryModelUsage> | undefined,
+  experimentUsage: Record<string, RegistryExperimentUsage> | null | undefined,
 ): LangfuseColumnDef<RegistryModelRow>[] {
   return [
     createTextTableColumn<RegistryModelRow>({
@@ -122,12 +129,44 @@ function getColumns(
         return usage[row.original.id]?.generationsInWindow ?? 0;
       },
     }),
+    createNumberTableColumn<RegistryModelRow>({
+      accessorFn: () => undefined,
+      id: "experiments",
+      header: `Experiments, ${REGISTRY_USAGE_WINDOW_DAYS}d`,
+      headerTooltip: { description: EXPERIMENT_USAGE_DESCRIPTION },
+      emptyValue: "-",
+      formatter: (count) => numberFormatter(count, 0),
+      size: 130,
+      enableHiding: true,
+      getValue: (_, { row }) => {
+        if (experimentUsage === null) return undefined;
+        if (!experimentUsage) return { type: "loading" };
+        return experimentUsage[row.original.id]?.experiments ?? 0;
+      },
+    }),
+    createNumberTableColumn<RegistryModelRow>({
+      accessorFn: () => undefined,
+      id: "datasets",
+      header: `Datasets, ${REGISTRY_USAGE_WINDOW_DAYS}d`,
+      headerTooltip: { description: EXPERIMENT_USAGE_DESCRIPTION },
+      emptyValue: "-",
+      formatter: (count) => numberFormatter(count, 0),
+      size: 120,
+      enableHiding: true,
+      getValue: (_, { row }) => {
+        if (experimentUsage === null) return undefined;
+        if (!experimentUsage) return { type: "loading" };
+        return experimentUsage[row.original.id]?.datasets ?? 0;
+      },
+    }),
   ];
 }
 
 export function RegistryModelsTable({
   data,
   usage,
+  experimentUsage,
+  canViewExperiments,
   pagination,
   search,
   toolbarActions,
@@ -135,9 +174,12 @@ export function RegistryModelsTable({
   onEdit,
   onDelete,
   onViewGenerations,
+  onViewExperiments,
 }: {
   data: TableProps<RegistryModelRow>["data"];
   usage?: Record<string, RegistryModelUsage>;
+  experimentUsage?: Record<string, RegistryExperimentUsage> | null;
+  canViewExperiments: boolean;
   pagination: PaginationBarProps;
   search: { value: string; onChange: (value: string) => void };
   toolbarActions?: SettingsTableProps<RegistryModelRow>["toolbarActions"];
@@ -145,13 +187,14 @@ export function RegistryModelsTable({
   onEdit: (model: RegistryModelRow) => void;
   onDelete: (model: RegistryModelRow) => void;
   onViewGenerations: (model: RegistryModelRow) => void;
+  onViewExperiments: (model: RegistryModelRow) => void;
 }) {
   const noAccess = { reason: "You do not have permission to change models" };
 
   return (
     <SettingsTable
       tableName="modelRegistry"
-      columns={getColumns(usage)}
+      columns={getColumns(usage, experimentUsage)}
       columnVisibilityKey="modelRegistryColumnVisibility"
       columnOrderKey="modelRegistryColumnOrder"
       data={data}
@@ -170,6 +213,16 @@ export function RegistryModelsTable({
             ? undefined
             : { reason: "Link a pricing model to see generations" },
           onClick: () => onViewGenerations(model),
+        },
+        {
+          id: "view-experiments",
+          type: "item",
+          title: "View experiments",
+          icon: Beaker,
+          disabled: canViewExperiments
+            ? undefined
+            : { reason: "Experiments are not available for this project" },
+          onClick: () => onViewExperiments(model),
         },
         {
           id: "edit",
