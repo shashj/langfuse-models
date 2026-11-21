@@ -1,4 +1,4 @@
-import { testFeatureFlags } from "@/src/__tests__/fixtures/feature-flags";
+import { createSession } from "@/src/__tests__/fixtures/session-factory";
 import type { Session } from "next-auth";
 import { randomUUID } from "crypto";
 import { afterAll, describe, expect, it } from "vitest";
@@ -26,40 +26,25 @@ const createCaller = async (
 ) => {
   const { project, org } =
     options.existing ?? (await createOrgProjectAndApiKey({ plan: "Team" }));
-  const session: Session = {
-    expires: "1",
-    user: {
-      id: `user-${randomUUID()}`,
-      name: "Model Registry Test User",
-      canCreateOrganizations: true,
-      organizations: [
-        {
-          id: org.id,
-          name: org.name,
-          role: "OWNER",
-          plan: "cloud:team",
-          cloudConfig: undefined,
-          metadata: {},
-          aiFeaturesEnabled: false,
-          aiTelemetryEnabled: false,
-          projects: [
-            {
-              id: project.id,
-              role: options.projectRole ?? "ADMIN",
-              retentionDays: 30,
-              deletedAt: null,
-              name: project.name,
-              hasTraces: true,
-              metadata: {},
-              createdAt: new Date().toISOString(),
-            },
-          ],
-        },
-      ],
-      featureFlags: testFeatureFlags(),
-    },
-    environment: {} as any,
-  };
+  const session: Session = createSession({
+    user: { id: `user-${randomUUID()}`, name: "Model Registry Test User" },
+    organizations: [
+      {
+        id: org.id,
+        name: org.name,
+        role: "OWNER",
+        plan: "cloud:team",
+        projects: [
+          {
+            id: project.id,
+            role: options.projectRole ?? "ADMIN",
+            name: project.name,
+            hasTraces: true,
+          },
+        ],
+      },
+    ],
+  });
 
   const ctx = createInnerTRPCContext({ session, headers: {} });
   return {
@@ -129,16 +114,28 @@ describe("model registry tRPC router", () => {
 
   it("does not expose or accept another project's data", async () => {
     const { projectId, caller } = await createCaller();
-    const { projectId: otherProjectId, caller: otherCaller } =
-      await createCaller();
+    const {
+      projectId: otherProjectId,
+      org: otherOrg,
+      caller: otherCaller,
+    } = await createCaller();
 
     const theirs = await otherCaller.modelRegistry.upsert(
       baseModel(otherProjectId),
     );
     const theirPricing = await prisma.model.create({
       data: {
+        scope: "PROJECT",
         projectId: otherProjectId,
         modelName: `pricing-${randomUUID()}`,
+        matchPattern: "x",
+      },
+    });
+    const theirOrgPricing = await prisma.model.create({
+      data: {
+        scope: "ORGANIZATION",
+        organizationId: otherOrg.id,
+        modelName: `org-pricing-${randomUUID()}`,
         matchPattern: "x",
       },
     });
@@ -152,6 +149,11 @@ describe("model registry tRPC router", () => {
     await expect(
       caller.modelRegistry.upsert(
         baseModel(projectId, { pricingModelId: theirPricing.id }),
+      ),
+    ).rejects.toThrow(/pricing model not found/i);
+    await expect(
+      caller.modelRegistry.upsert(
+        baseModel(projectId, { pricingModelId: theirOrgPricing.id }),
       ),
     ).rejects.toThrow(/pricing model not found/i);
   });
@@ -289,6 +291,7 @@ describe("model registry tRPC router", () => {
     const { projectId: otherProjectId } = await createCaller();
     const pricing = await prisma.model.create({
       data: {
+        scope: "PROJECT",
         projectId,
         modelName: `pricing-${randomUUID()}`,
         matchPattern: "x",

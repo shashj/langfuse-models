@@ -69,6 +69,7 @@ import { type AgentGraphDataResponse } from "@/src/features/trace-graph-view/typ
 import { mapAgentGraphRecord } from "@/src/features/trace-graph-view/fns/mapAgentGraphRecord";
 
 import type * as opentelemetry from "@opentelemetry/api";
+import { isProjectMember } from "@/src/server/utils/checkProjectMembership";
 
 const GetAllEventsInput = EventsTableOptions.safeExtend({
   ...paginationZod,
@@ -207,7 +208,7 @@ export const eventsRouter = createTRPCRouter({
     protectedGetSessionProcedure.input(GetSessionEventsInput),
     { resourceType: "observation", action: "list" },
     async ({ input, ctx, audit }) => {
-      const filter = ctx.session.projectRole
+      const filter = isProjectMember(ctx.session?.user, input.projectId)
         ? (input.filter ?? [])
         : (input.filter ?? []).filter(
             ({ column }) =>
@@ -590,8 +591,8 @@ export const eventsRouter = createTRPCRouter({
     },
   ),
   /**
-   * Render a trace as the text the Topics summarizer receives, loaded the way
-   * manual Topics runs load it but bounded by the trace timestamp. Internal
+   * Render a trace as the text the Topics summarizer receives, rebuilt from the
+   * events tables and bounded by the trace timestamp. Internal
    * users only, and only where the events tables are written.
    */
   topicsTranscriptByTraceId: auditedQuery(
