@@ -80,7 +80,12 @@ describe("model registry tRPC router", () => {
     const input = baseModel(projectId, {
       contextWindow: 128000,
       capabilities: { tools: true, vision: false },
-      defaultParams: { temperature: 0.2, max_tokens: 512 },
+      defaultParams: {
+        temperature: 0.2,
+        max_tokens: 512,
+        maxReasoningTokens: 2048,
+        providerOptions: { reasoning_effort: "high" },
+      },
     });
 
     const created = await caller.modelRegistry.upsert(input);
@@ -104,7 +109,12 @@ describe("model registry tRPC router", () => {
       status: "deprecated",
       contextWindow: 128000,
       capabilities: { tools: true, vision: false },
-      defaultParams: { temperature: 0.2, max_tokens: 512 },
+      defaultParams: {
+        temperature: 0.2,
+        max_tokens: 512,
+        maxReasoningTokens: 2048,
+        providerOptions: { reasoning_effort: "high" },
+      },
       connectionAvailable: false,
     });
   });

@@ -7,6 +7,12 @@ import { Dialog } from "@/src/components/design-system/Dialog/Dialog";
 import { Form } from "@/src/components/design-system/Form/Form";
 import { AsyncSelectInput } from "@/src/components/design-system/AsyncSelectInput/AsyncSelectInput";
 import { SwitchInput } from "@/src/components/design-system/SwitchInput/SwitchInput";
+import { CodeMirrorEditor } from "@/src/components/editor/CodeMirrorEditor";
+import {
+  defaultParamsFromFields,
+  fieldsFromDefaultParams,
+  providerOptionsError,
+} from "@/src/features/model-registry/defaultParams";
 import { showSuccessToast } from "@/src/features/notifications/showSuccessToast";
 import {
   CAPABILITY_KEYS,
@@ -35,6 +41,11 @@ const optionalPositiveInt = z
   .string()
   .trim()
   .refine((v) => v === "" || /^[1-9]\d*$/.test(v), "Enter a whole number");
+// A token budget where 0 turns thinking off and -1 lets the provider decide.
+const optionalWholeNumber = z
+  .string()
+  .trim()
+  .refine((v) => v === "" || /^-?\d+$/.test(v), "Enter a whole number");
 const optionalNumber = z
   .string()
   .trim()
@@ -55,6 +66,11 @@ const FormSchema = z.object({
   temperature: optionalNumber,
   topP: optionalNumber,
   maxTokens: optionalPositiveInt,
+  maxReasoningTokens: optionalWholeNumber,
+  providerOptions: z.string().superRefine((value, ctx) => {
+    const message = providerOptionsError(value);
+    if (message) ctx.addIssue({ code: "custom", message });
+  }),
   pricingModelId: z.string(),
 });
 type FormValues = z.infer<typeof FormSchema>;
@@ -76,9 +92,7 @@ function toFormValues(model?: RegistryModelRow): FormValues {
     vision: Boolean(model?.capabilities.vision),
     jsonMode: Boolean(model?.capabilities.jsonMode),
     reasoning: Boolean(model?.capabilities.reasoning),
-    temperature: toText(model?.defaultParams?.temperature),
-    topP: toText(model?.defaultParams?.top_p),
-    maxTokens: toText(model?.defaultParams?.max_tokens),
+    ...fieldsFromDefaultParams(model?.defaultParams),
     pricingModelId: model?.pricingModel?.id ?? NO_PRICING,
   };
 }
@@ -139,12 +153,7 @@ export function UpsertRegistryModelDialog({
   });
 
   const submit = (values: FormValues) => {
-    const defaultParams = {
-      temperature: toNumber(values.temperature),
-      top_p: toNumber(values.topP),
-      max_tokens: toNumber(values.maxTokens),
-    };
-    const hasParams = Object.values(defaultParams).some((v) => v !== undefined);
+    const defaultParams = defaultParamsFromFields(values);
 
     upsert.mutate({
       projectId,
@@ -162,7 +171,7 @@ export function UpsertRegistryModelDialog({
         jsonMode: values.jsonMode,
         reasoning: values.reasoning,
       },
-      defaultParams: hasParams ? defaultParams : null,
+      defaultParams,
       pricingModelId:
         values.pricingModelId === NO_PRICING ? null : values.pricingModelId,
     });
@@ -278,6 +287,31 @@ export function UpsertRegistryModelDialog({
             label="Default max tokens"
             inputMode="numeric"
           />
+          <Form.InputField
+            control={form.control}
+            name="maxReasoningTokens"
+            label="Default max reasoning tokens"
+            description="Token budget for model thinking. Use -1 to let the provider decide and 0 to turn it off. Which models support it depends on the provider."
+            inputMode="numeric"
+          />
+          <Form.Field
+            control={form.control}
+            name="providerOptions"
+            label="Provider options"
+            description='Extra options sent to the provider, as a JSON object. For example {"reasoning_effort": "high"} sets the reasoning effort of OpenAI reasoning models. Check your provider&apos;s API reference for supported values.'
+          >
+            {(field) => (
+              <CodeMirrorEditor
+                value={field.value}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+                mode="json"
+                lineNumbers={false}
+                minHeight={80}
+                placeholder='{"reasoning_effort": "high"}'
+              />
+            )}
+          </Form.Field>
           <Form.Field
             control={form.control}
             name="pricingModelId"
