@@ -36,6 +36,7 @@ pnpm run seed -- topics-map  # 116 traces with PUBLISHED Intent/Issues maps on t
 pnpm run seed -- custom-models --v4  # project-level model definitions (tiered + single-tier, one price at 0) + a trace whose generations link to them, plus one unpriced model
 pnpm run seed -- custom-models --v4 --usage-states  # same model fixtures plus root/child inferred, empty, zero, and error usage/cost states
 pnpm run seed -- registry-models  # every model Langfuse lists for its providers (85) in the project model registry; --adapters openai,anthropic limits it; safe to re-run
+pnpm run seed -- registry-traces --v4  # 5 hand-written prompts on 5 models (registry models linked to managed pricing) + 1000 traces, no model calls; some run on another model than the prompt names, a dated snapshot, or an unmatched name. Needs the managed model definitions (worker boot syncs them)
 pnpm run seed -- experiment-io  # one v4 experiment with three chat/nested JSON items
 pnpm run seed -- experiment-filters  # three v4 runs over 60 items, shifted numeric/categorical/boolean scores, status, metadata and missing results
 pnpm run seed -- experiment-io --compare  # same dataset plus a second run with a long chat output, for the comparison table
