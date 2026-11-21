@@ -6,7 +6,11 @@ import {
   type PrismaClient,
   type RegistryModel,
 } from "@langfuse/shared/src/db";
-import { PromptService, redis } from "@langfuse/shared/src/server";
+import {
+  PromptService,
+  redis,
+  visibleModelsWhere,
+} from "@langfuse/shared/src/server";
 import type { UpsertRegistryModelSchema } from "@/src/features/model-registry/validation";
 
 /** The writable fields of a registry model. */
@@ -29,15 +33,12 @@ export async function saveRegistryModel(params: {
   const { prisma, projectId, id, input } = params;
   const { pricingModelId, ...fields } = input;
 
-  // A pricing model must be one of this project's models or a
-  // Langfuse-managed default (null projectId). Anything else would let a
-  // project link to another project's pricing.
+  // A pricing model must be visible to this project: its own, its
+  // organization's, or a Langfuse-managed default. Anything else would let a
+  // project link to another project's or organization's pricing.
   if (pricingModelId) {
     const pricingModel = await prisma.model.findFirst({
-      where: {
-        id: pricingModelId,
-        OR: [{ projectId }, { projectId: null }],
-      },
+      where: { AND: [{ id: pricingModelId }, visibleModelsWhere(projectId)] },
       select: { id: true },
     });
     if (!pricingModel) {

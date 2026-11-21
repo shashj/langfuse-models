@@ -24,6 +24,9 @@ import { ParsedPromptDependencyTag } from "../../../features/prompts/parsePrompt
 import { resolveEffectivePromptModel } from "../../../features/prompts/promptModel";
 
 export const MAX_PROMPT_NESTING_DEPTH = 5;
+// Measured on the JSON-serialized prompt. A dependency tag repeated N times
+// expands to N copies of the child, so this bounds the resolved output.
+export const MAX_RESOLVED_PROMPT_LENGTH = 10_000_000;
 // Keeps bind parameters per query far below the Postgres limit of 32767.
 const MAX_ROWS_PER_QUERY = 1000;
 
@@ -440,6 +443,16 @@ export class PromptService {
           const replaceValue = JSON.stringify(resolvedDepPrompt)
             .slice(1, -1) // this is necessary to avoid parsing errors as resolved value is unstringified
             .replace(/\$/g, "$$$$"); // Escape dollar signs in replacement string. $ has special meaning in replace(), so we need to escape it with $$. Since we're in a string that will be used as a replacement, we need to double escape it (hence $$$$)
+
+          const occurrences = resolvedPrompt.match(regex)?.length ?? 0;
+          if (
+            resolvedPrompt.length + occurrences * replaceValue.length >
+            MAX_RESOLVED_PROMPT_LENGTH
+          ) {
+            throw new LangfuseConflictError(
+              `Resolved prompt exceeds maximum size (${MAX_RESOLVED_PROMPT_LENGTH} characters)`,
+            );
+          }
 
           resolvedPrompt = resolvedPrompt.replace(regex, replaceValue);
         }
