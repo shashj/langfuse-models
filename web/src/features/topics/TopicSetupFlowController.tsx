@@ -1,6 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { FilterState } from "@langfuse/shared";
-import { topicRuleFilterError } from "@langfuse/shared/topics";
+import {
+  DEFAULT_TOPIC_RULE_NAME,
+  topicRuleFilterError,
+} from "@langfuse/shared/topics";
 import { useTopicTraceFilter } from "./useTopicTraceFilter";
 import { DialogController } from "@/src/components/design-system/DialogController/DialogController";
 import { env } from "@/src/env.mjs";
@@ -117,7 +120,6 @@ function TopicSetupSession({
     onSuccess: () => {
       utils.topics.modelSettings.invalidate({ projectId });
       utils.topics.facets.invalidate({ projectId });
-      utils.topics.rules.invalidate({ projectId });
       // The page follows the first rule's setup from the maps overview.
       utils.topics.maps.invalidate({ projectId });
       utils.topics.tracingReadinessSettings.invalidate({ projectId });
@@ -234,7 +236,9 @@ function TopicSetupSession({
       ),
       filter: draft.filter,
       traceIdleMs: draft.waitMinutes * 60_000,
-      ...(savedRuleId ? { ruleId: savedRuleId } : { name: "Default" }),
+      ...(savedRuleId
+        ? { ruleId: savedRuleId }
+        : { name: DEFAULT_TOPIC_RULE_NAME }),
     });
     if (saved) setSavedRuleId(saved.id);
     return saved?.id ?? savedRuleId;

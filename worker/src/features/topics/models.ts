@@ -21,6 +21,8 @@ import {
   type TopicsModels,
 } from "@langfuse/shared/topics/server";
 import {
+  TOPICS_MAX_EMBEDDING_DIMENSIONS,
+  TOPICS_MIN_EMBEDDING_DIMENSIONS,
   topicEmbeddingConfigSchema,
   type TopicFacetVersion,
   type TopicProcessingConfig,
@@ -224,7 +226,11 @@ async function topicTraceSink(
   projectId: string,
   metadata?: Record<string, unknown>,
 ) {
-  if (!env.LANGFUSE_TOPICS_TRACING_ENABLED_PROJECT_IDS?.includes(projectId))
+  if (
+    !env.LANGFUSE_TOPICS_TRACING_ENABLED_PROJECT_IDS_EXPERIMENTAL?.includes(
+      projectId,
+    )
+  )
     return undefined;
   const trace = getLangfuseAITraceSinkParams({
     feature: "topics",
@@ -281,17 +287,6 @@ Recordings come from many frameworks and can be messy. Repeated, partial, or pas
 Status says whether the facet applies, not whether the run succeeded.
 </status>`;
 
-function requireFrozenSummaryModel(
-  models: TopicsModels,
-  config: TopicProcessingConfig,
-) {
-  if (config.summaryModel !== models.summary.model)
-    throw new TopicsProviderUnavailable(
-      "The project's summary model changed after this request was created. Start a new Topics execution.",
-      "configuration",
-    );
-}
-
 /**
  * Summarizes all given facets of one trace in a single call. The system prompt
  * is identical across traces; each facet is listed under its key and answered
@@ -306,7 +301,6 @@ export async function summarizeTopicTraceFacets(
   config: TopicProcessingConfig,
   metadata?: Record<string, unknown>,
 ) {
-  requireFrozenSummaryModel(models, config);
   const entry = z.object({
     notes: z
       .string()
@@ -685,7 +679,7 @@ export async function embedTopicSummaries(
       .success
   )
     throw new TopicsProviderUnavailable(
-      "Topics embeddings require non-empty text and 64 to 4,096 dimensions.",
+      `Topics embeddings require non-empty text and ${TOPICS_MIN_EMBEDDING_DIMENSIONS} to ${TOPICS_MAX_EMBEDDING_DIMENSIONS.toLocaleString("en-US")} dimensions.`,
       "invalid_input",
     );
   const result = await topicModelCall(

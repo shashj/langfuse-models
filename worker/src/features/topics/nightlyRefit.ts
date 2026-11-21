@@ -6,7 +6,7 @@ import {
   createTopicRun,
   enqueueTopicRuleRefit,
   getEnabledTopicsModels,
-  getTopicClusteringSummaryStats,
+  hasCompatibleTopicSummaries,
   getTopicRuleMap,
   isTopicRuleSetupActive,
   listTopicFacets,
@@ -228,7 +228,7 @@ async function refitRuleFacet({
     ...run,
     config: {
       ...embedding,
-      // The fit loads the newest of the rule's summaries in this window.
+      // The fit loads a stable sample of the rule's summaries in this window.
       timeRange: {
         from: new Date(
           now.getTime() - TOPICS_MAX_SELECTION_RANGE_MS,
@@ -279,18 +279,10 @@ async function hasNewSummaries(
     now.getTime() - TOPICS_MAX_TIME_RANGE_MS,
   );
   if (from >= now.getTime()) return false;
-  const { count } = await getTopicClusteringSummaryStats(
-    projectId,
-    facet.facetId,
-    facet.version,
-    embeddingConfig,
-    { from: new Date(from), to: now },
-    {
-      maxRows: env.LANGFUSE_TOPICS_MAX_CLUSTERING_ROWS,
-      maxBytes: env.LANGFUSE_TOPICS_MAX_CLUSTERING_BYTES,
-    },
-  );
-  return count > 0;
+  return hasCompatibleTopicSummaries(projectId, facet, embeddingConfig, {
+    from: new Date(from),
+    to: now,
+  });
 }
 
 export class TopicsNightlyRefitRunner extends PeriodicExclusiveRunner {
