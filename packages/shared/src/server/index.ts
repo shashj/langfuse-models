@@ -148,6 +148,7 @@ export * from "./repositories/definitions";
 export * from "../utils/IORepresentation/chatML/types";
 export * from "../server/ingestion/types";
 export * from "../server/ingestion/modelMatch";
+export * from "./ingestion/modelVisibility";
 export * from "./ingestion/ingestionAttribution";
 export * from "./ingestion/processEventBatch";
 export * from "../server/ingestion/validateAndInflateScore";
@@ -173,7 +174,6 @@ export {
   TOPICS_TEXT_VERSION,
 } from "./transcript/topics-model-input";
 export { transcriptBlockTypes } from "./transcript/topics-renderer";
-export { renderGenericTranscript } from "./transcript/generic-renderer";
 export { topicsTranscriptConfig } from "./transcript/topics-renderer-config";
 export { transcriptRenderConfigSchema } from "./transcript/topics-renderer-config";
 export { type TranscriptRenderConfig } from "./transcript/topics-renderer-config";
@@ -184,12 +184,14 @@ export { type ThreadMessage } from "./transcript/types";
 export { type Turn } from "./transcript/types";
 export { type Thread } from "./transcript/types";
 export { type Transcript } from "./transcript/types";
-export { createTraceBatchInputStorage } from "./traceBatch/storage";
-export { TRACE_BATCH_INPUT_MAX_CHARACTERS } from "./traceBatch/storage";
-export { UnsupportedTraceBatchInputVersionError } from "./traceBatch/storage";
-export { type TraceBatchInputReference } from "./traceBatch/storage";
-export { type TraceBatchInputData } from "./traceBatch/storage";
-export { type TraceBatchInputStorage } from "./traceBatch/storage";
+export { createTraceTranscriptStorage } from "./eventsDispatch/storage";
+export { TRACE_TRANSCRIPT_MAX_CHARACTERS } from "./eventsDispatch/storage";
+export { TRACE_TRANSCRIPT_PREFIX } from "./eventsDispatch/storage";
+export { TRACE_TRANSCRIPT_RETENTION_MS } from "./eventsDispatch/storage";
+export { UnsupportedTraceTranscriptVersionError } from "./eventsDispatch/storage";
+export { type TraceTranscriptReference } from "./eventsDispatch/storage";
+export { type TraceTranscriptData } from "./eventsDispatch/storage";
+export { type TraceTranscriptStorage } from "./eventsDispatch/storage";
 export * from "../server/queries/public-api-filter-builder";
 export { type PricingTierMatchAttributes } from "./pricing-tiers/types";
 export { type PricingTierMatchResult } from "./pricing-tiers/types";
@@ -208,7 +210,6 @@ export * from "./redis/webhookQueue";
 export * from "./redis/monitorQueue";
 export * from "./redis/inAppAgentRunQueue";
 export * from "./redis/traceDelete";
-export * from "./redis/traceBatch";
 export * from "./redis/sharding";
 export * from "./redis/projectDelete";
 export * from "./redis/scoreDelete";
@@ -563,6 +564,7 @@ export { getAvgCostByEvaluatorIds } from "./repositories/events";
 export { getTotalCostByRule } from "./repositories/events";
 export { getTotalCostByEvaluatorIds } from "./repositories/events";
 export { getLatestEvaluatorRunCost } from "./repositories/events";
+export { getGatewaySpendSinceFromEvents } from "./repositories/events";
 export { getEvaluatorExecutionSummaries } from "./repositories/events";
 export { getSessionMetricsFromEvents } from "./repositories/events";
 export { type SdkMetadata } from "./repositories/events";
@@ -570,9 +572,9 @@ export { getLatestSdkVersionInfoFromEvents } from "./repositories/events";
 export { getTracesIdentifierForSessionFromEvents } from "./repositories/events";
 export { getEventsStreamForEval } from "./repositories/events-stream";
 export {
-  getTraceBatchEventStream,
-  type TraceBatchEventRow,
-} from "./repositories/trace-batch";
+  getEventsDispatchEventStream,
+  type EventsDispatchEventRow,
+} from "./repositories/events-dispatch";
 export { type TableCount } from "./repositories/types";
 export { type DateTrunc } from "./repositories/dashboards";
 export { getScoreAggregate } from "./repositories/dashboards";
@@ -617,7 +619,10 @@ export { clickhouseCompliantRandomCharacters } from "./repositories/clickhouse";
 export { OBSERVATIONS_TO_TRACE_INTERVAL_DAYS } from "./repositories/constants";
 export { OBSERVATIONS_TO_TRACE_INTERVAL } from "./repositories/constants";
 export { TRACE_TO_OBSERVATIONS_INTERVAL } from "./repositories/constants";
-export { SCORE_TO_TRACE_OBSERVATIONS_INTERVAL } from "./repositories/constants";
+export {
+  SCORE_TO_TRACE_OBSERVATIONS_INTERVAL,
+  SCORE_TO_TRACE_OBSERVATIONS_INTERVAL_HOURS,
+} from "./repositories/constants";
 export { isStorableTraceSessionId } from "./repositories/trace-sessions";
 export { storableTraceSessionIds } from "./repositories/trace-sessions";
 export { getPublicSessionsFilter } from "./repositories/trace-sessions";
@@ -716,6 +721,7 @@ export { getExperimentItemsCountFromEvents } from "./repositories/experiments";
 export { getExperimentItemsFilterOptions } from "./repositories/experiments";
 export { getExperimentScoreOptions } from "./repositories/experiments";
 export { getExperimentItemsFromEvents } from "./repositories/experiments";
+export { getExperimentsStartTime } from "./repositories/experiments";
 export { type ExperimentOutputData } from "./repositories/experiments";
 export { type ExperimentItemBatchIO } from "./repositories/experiments";
 export { getExperimentItemsBatchIO } from "./repositories/experiments";
@@ -731,8 +737,23 @@ export { type StageAuditLogEventInput } from "./repositories/auditLogs";
 export { stageAuditLogEvents } from "./repositories/auditLogs";
 export { deriveAuditLogEventId } from "./repositories/auditLogs";
 export { convertAuditLogStagingRowToClickhouse } from "./repositories/auditLogs";
+export { type AuditLogEntry } from "./repositories/auditLogs";
+export { getAuditLogs } from "./repositories/auditLogs";
+export { getAuditLogsCount } from "./repositories/auditLogs";
+export { getAuditLogsForExport } from "./repositories/auditLogs";
+export { convertPostgresAuditLogToClickhouse } from "./repositories/auditLogs";
+export { getAuditLogResourceRefs } from "./repositories/auditLogs";
+export { getSystemAuditLogActorForUserId } from "./repositories/auditLogs";
+export { getSystemAuditLogActorForApiKeyId } from "./repositories/auditLogs";
 export { type BillableEventType } from "./repositories/billable-events";
-export { getBillableUnitCountsByProjectInWindow } from "./repositories/billable-events";
+export {
+  BILLING_SETTLE_MS,
+  type BillableUnitBucketGranularity,
+  bucketStartSql,
+  getBillableEventsLedgerStart,
+  getBillableUnitCountsByProjectAndBucket,
+  getBillableUnitCountsByProjectInWindow,
+} from "./repositories/billable-events";
 export { getTopicSetupTraceCount } from "./repositories/topic-setup-events";
 export {
   getTopicSetupTraceBounds,
@@ -888,6 +909,7 @@ export { createObservationsCh } from "./test-utils/clickhouse-helpers";
 export { createEventsCh } from "./test-utils/clickhouse-helpers";
 export { createScoresCh } from "./test-utils/clickhouse-helpers";
 export { createDatasetRunItemsCh } from "./test-utils/clickhouse-helpers";
+export { createAuditLogsCh } from "./test-utils/clickhouse-helpers";
 export { createBasicAuthHeader } from "./test-utils/org-factory";
 export { type CreateOrgProjectAndApiKeyOptions } from "./test-utils/org-factory";
 export { createOrgProjectAndApiKey } from "./test-utils/org-factory";
@@ -928,6 +950,7 @@ export const getTracesIdentifierForSession =
   getTracesIdentifierForSessionRoutingWrapper;
 
 export * from "./billing/billingLedgerShadow";
+export * from "./entitlements/getPlan";
 
 export { isDnsCompatibleBucketName } from "./outbound-url/validation";
 export { assembleTranscriptContext } from "./transcript/context";
@@ -935,6 +958,8 @@ export { isExecutionIssue } from "./transcript/context";
 export type { ExecutionIssue } from "./transcript/types";
 export type { TranscriptContext } from "./transcript/types";
 export { getTracingCountsByProjectInCreationIntervalFromEventsTable } from "./repositories/events";
+export { AI_GATEWAY_COST_SOURCE_CALCULATED } from "./otel/OtelIngestionProcessor";
+export { AI_GATEWAY_COST_SOURCE_METADATA_KEY } from "./otel/OtelIngestionProcessor";
 export { AI_GATEWAY_KEY_ID_METADATA_KEY } from "./otel/OtelIngestionProcessor";
 export { aiGatewayIngestionApiKey } from "./otel/OtelIngestionProcessor";
 export { isAiGatewayIngestionApiKey } from "./otel/OtelIngestionProcessor";
