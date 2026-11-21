@@ -7,6 +7,8 @@ import { prisma } from "@langfuse/shared/src/db";
 import { appRouter } from "@/src/server/api/root";
 import { createInnerTRPCContext } from "@/src/server/api/trpc";
 import {
+  createObservation,
+  createObservationsCh,
   createOrgProjectAndApiKey,
   PromptService,
   redis,
@@ -282,5 +284,58 @@ describe("model registry tRPC router", () => {
     });
 
     expect((await read())?.model?.modelId).toBe("after-edit");
+  });
+
+  it("reports generation usage through the pricing link, per project", async () => {
+    const { projectId, caller } = await createCaller();
+    const { projectId: otherProjectId } = await createCaller();
+    const pricing = await prisma.model.create({
+      data: {
+        scope: "PROJECT",
+        projectId,
+        modelName: `pricing-${randomUUID()}`,
+        matchPattern: "x",
+      },
+    });
+    const linked = await caller.modelRegistry.upsert(
+      baseModel(projectId, { pricingModelId: pricing.id }),
+    );
+    const unlinked = await caller.modelRegistry.upsert(baseModel(projectId));
+
+    const now = Date.now();
+    const day = 24 * 60 * 60 * 1000;
+    await createObservationsCh([
+      createObservation({
+        project_id: projectId,
+        internal_model_id: pricing.id,
+        start_time: now - day,
+      }),
+      createObservation({
+        project_id: projectId,
+        internal_model_id: pricing.id,
+        start_time: now - 90 * day,
+      }),
+      // Same pricing id in another project must not be counted.
+      createObservation({
+        project_id: otherProjectId,
+        internal_model_id: pricing.id,
+        start_time: now - day,
+      }),
+    ]);
+
+    const usage = await caller.modelRegistry.usage({
+      projectId,
+      ids: [linked.id, unlinked.id],
+    });
+
+    expect(Object.keys(usage)).toEqual([linked.id]);
+    expect(usage[linked.id].generationsInWindow).toBe(1);
+    expect(usage[linked.id].lastUsed?.getTime()).toBeGreaterThan(now - 2 * day);
+
+    const found = await caller.modelRegistry.lookup({
+      projectId,
+      pricingModelIds: [pricing.id],
+    });
+    expect(found.map((row) => row.id)).toEqual([linked.id]);
   });
 });

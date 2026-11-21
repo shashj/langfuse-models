@@ -10,6 +10,7 @@ import {
   registryModelInclude,
   toRegistryModelRow,
 } from "@/src/features/model-registry/server/mapRegistryModel";
+import { getRegistryModelUsage } from "@/src/features/model-registry/server/registryModelUsage";
 import {
   removeRegistryModel,
   saveRegistryModel,
@@ -250,5 +251,66 @@ export const modelRegistryRouter = createTRPCRouter({
         created: result.count,
         skipped: candidates.length - result.count,
       };
+    }),
+
+  /**
+   * Light lookup for trace views: registry entries by their own id or by the
+   * pricing model that observations store as `internal_model_id`. Skips the
+   * connection lookup that `getAll` and `getById` do.
+   */
+  lookup: protectedProjectProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        ids: z.array(z.string()).max(100).default([]),
+        pricingModelIds: z.array(z.string()).max(100).default([]),
+      }),
+    )
+    .query(async ({ input, ctx }) => {
+      throwIfCannotReadRegistry({
+        session: ctx.session,
+        projectId: input.projectId,
+      });
+
+      const matchers: Prisma.RegistryModelWhereInput[] = [
+        ...(input.ids.length > 0 ? [{ id: { in: input.ids } }] : []),
+        ...(input.pricingModelIds.length > 0
+          ? [{ pricingModelId: { in: input.pricingModelIds } }]
+          : []),
+      ];
+      if (matchers.length === 0) return [];
+
+      return ctx.prisma.registryModel.findMany({
+        where: { projectId: input.projectId, OR: matchers },
+        select: {
+          id: true,
+          displayName: true,
+          modelId: true,
+          pricingModelId: true,
+        },
+        orderBy: [{ displayName: "asc" }, { id: "asc" }],
+      });
+    }),
+
+  /**
+   * Generation usage for registry entries, joined through their pricing link.
+   * Entries without a pricing link are absent from the result.
+   */
+  usage: protectedProjectProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        ids: z.array(z.string()).max(200),
+      }),
+    )
+    .query(async ({ input, ctx }) => {
+      throwIfCannotReadRegistry({
+        session: ctx.session,
+        projectId: input.projectId,
+      });
+      return getRegistryModelUsage({
+        projectId: input.projectId,
+        registryModelIds: input.ids,
+      });
     }),
 });

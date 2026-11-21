@@ -27,6 +27,7 @@ import {
 import { useTraceData } from "@/src/features/traces/contexts/TraceDataProvider";
 import { useViewPreferences } from "@/src/features/traces/contexts/ViewPreferencesProvider";
 import { useReadPath } from "@/src/features/events/hooks/useReadPath";
+import { getPromptModelMismatch } from "@/src/features/model-registry/getPromptModelMismatch";
 import { prepareTraceAnnotation } from "@/src/features/scores/lib/prepareTraceAnnotation";
 import { AnnotateDrawerController } from "@/src/features/scores/components/AnnotateDrawerController";
 import { ConnectedTraceObservationAddToDropdownMenuController } from "@/src/features/traces/components/ConnectedTraceObservationAddToDropdownMenuController";
@@ -69,6 +70,10 @@ export interface ObservationDetailViewHeaderProps {
   treeNodeTotalCost?: Decimal;
 }
 
+/** The Models page filtered to one registry model. */
+const registryModelHref = (projectId: string, modelId: string) =>
+  `/project/${projectId}/models?search=${encodeURIComponent(modelId)}`;
+
 export const ObservationDetailViewHeader = memo(
   function ObservationDetailViewHeader({
     observation,
@@ -96,6 +101,32 @@ export const ObservationDetailViewHeader = memo(
     const prompt = api.prompts.byId.useQuery(
       { id: observation.promptId ?? "", projectId },
       { enabled: Boolean(observation.promptId) },
+    );
+    const registryLookupOptions = {
+      refetchOnWindowFocus: false,
+      staleTime: 1000 * 60 * 5,
+    } as const;
+    const observationRegistryModels = api.modelRegistry.lookup.useQuery(
+      {
+        projectId,
+        pricingModelIds: observation.internalModelId
+          ? [observation.internalModelId]
+          : [],
+      },
+      {
+        ...registryLookupOptions,
+        enabled: Boolean(observation.internalModelId),
+      },
+    );
+    const promptRegistryModels = api.modelRegistry.lookup.useQuery(
+      {
+        projectId,
+        ids: prompt.data?.registryModelId ? [prompt.data.registryModelId] : [],
+      },
+      {
+        ...registryLookupOptions,
+        enabled: Boolean(prompt.data?.registryModelId),
+      },
     );
     const evaluatorId = resolveEvaluatorIdMetadata(
       observationWithIO?.metadata ?? observation.metadata,
@@ -257,14 +288,18 @@ export const ObservationDetailViewHeader = memo(
           details: usageDetails,
           searchText: `tokens ${totalUsage}`,
         });
-      if (observation.model && observation.internalModelId)
+      if (observation.model && observation.internalModelId) {
+        const registryModel = observationRegistryModels.data?.[0];
         metrics.push({
           id: "model",
           type: "link",
-          href: `/project/${projectId}/settings/models/${observation.internalModelId}`,
+          href: registryModel
+            ? registryModelHref(projectId, registryModel.modelId)
+            : `/project/${projectId}/settings/models/${observation.internalModelId}`,
           text: observation.model,
           searchText: `model ${observation.model}`,
         });
+      }
       if (observation.promptId && !prompt.isLoading && prompt.data)
         metrics.push({
           id: "prompt",
@@ -273,6 +308,20 @@ export const ObservationDetailViewHeader = memo(
           label: "prompt",
           text: `${prompt.data.name} - v${prompt.data.version}`,
           searchText: `prompt ${prompt.data.name} ${prompt.data.version}`,
+        });
+      const promptModel = promptRegistryModels.data?.[0];
+      const promptModelMismatch = getPromptModelMismatch({
+        promptModel,
+        observation,
+      });
+      if (promptModel && promptModelMismatch)
+        metrics.push({
+          id: "prompt-model-mismatch",
+          type: "link",
+          href: registryModelHref(projectId, promptModel.modelId),
+          label: "prompt expects",
+          text: promptModelMismatch.expectedModel,
+          searchText: `prompt expects model ${promptModelMismatch.expectedModel}`,
         });
     }
 
