@@ -2,6 +2,8 @@ import { ExpandToggle } from "@/src/components/design-system/ExpandToggle/Expand
 import { buildLocalIsoDatePresentation } from "@/src/utils/dates";
 import { useState } from "react";
 import Link from "next/link";
+import { resolveRegistryModelForRun } from "@/src/features/model-registry/resolveRunModel";
+import { api } from "@/src/utils/api";
 import { ExperimentMetadataSection } from "./ExperimentMetadataSection";
 import { ExperimentOverviewField } from "./ExperimentOverviewField";
 import { ExperimentOverviewSectionHeading } from "./ExperimentOverviewSectionHeading";
@@ -43,6 +45,20 @@ export function ExperimentOverviewPanel({
   });
   const provider = metadata.provider;
   const model = metadata.model;
+  const registryModelId = metadata.registry_model_id;
+  // The registry entry the run used, if any: by the id it stored, or by its provider and model.
+  const registryEntries = api.modelRegistry.lookup.useQuery(
+    {
+      projectId,
+      ids: registryModelId ? [registryModelId] : [],
+      pairs: provider && model ? [{ provider, modelId: model }] : [],
+    },
+    { enabled: Boolean(registryModelId || (provider && model)) },
+  );
+  const registryModel = resolveRegistryModelForRun(
+    metadata,
+    registryEntries.data ?? [],
+  );
   const pullRequestUrl = metadata["langfuse.pr_url"];
   const githubJobUrl = metadata["langfuse.github_job_url"];
   const safePullRequestUrl = isSafeHttpUrl(pullRequestUrl)
@@ -56,6 +72,7 @@ export function ExperimentOverviewPanel({
     delete additionalMetadata.provider;
     delete additionalMetadata.model;
   }
+  delete additionalMetadata.registry_model_id;
   if (safePullRequestUrl) delete additionalMetadata["langfuse.pr_url"];
   if (safeGithubJobUrl) delete additionalMetadata["langfuse.github_job_url"];
   const hasAdditionalMetadata = Object.keys(additionalMetadata).length > 0;
@@ -132,9 +149,26 @@ export function ExperimentOverviewPanel({
               {(provider || model) && (
                 <ExperimentOverviewField label="Model">
                   <div>
-                    {provider && model
-                      ? `${provider}/${model}`
-                      : provider || model}
+                    {registryModel ? (
+                      <Link
+                        href={`/project/${projectId}/models?search=${encodeURIComponent(registryModel.modelId)}`}
+                        className="text-primary hover:underline"
+                        title="View in the model registry"
+                      >
+                        {registryModel.displayName}
+                      </Link>
+                    ) : null}
+                    <span
+                      className={
+                        registryModel ? "text-muted-foreground ml-1" : undefined
+                      }
+                    >
+                      {registryModel ? "(" : ""}
+                      {provider && model
+                        ? `${provider}/${model}`
+                        : provider || model}
+                      {registryModel ? ")" : ""}
+                    </span>
                   </div>
                 </ExperimentOverviewField>
               )}

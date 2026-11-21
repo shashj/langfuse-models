@@ -364,6 +364,9 @@ export const ExperimentMetadataSchema = z
     prompt_id: z.string(),
     provider: z.string(),
     model: z.string(),
+    // The model registry entry the run was started from. Provider and model are what run;
+    // the id lets the run keep pointing at its entry if the entry is edited later.
+    registry_model_id: z.string().optional(),
     model_params: ZodModelConfig,
     structured_output_schema: LLMJSONSchema.optional(),
     experiment_name: z.string().optional(),

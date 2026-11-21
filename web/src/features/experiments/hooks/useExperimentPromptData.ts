@@ -101,11 +101,15 @@ export function useExperimentPromptData({
     return parsePromptToolConfig(prompt?.config);
   }, [promptId, promptMeta.data]);
 
+  const selectedPromptRegistryModelId =
+    promptMeta.data?.find((p) => p.id === promptId)?.registryModelId ?? null;
+
   return {
     expectedColumns,
     promptsByName,
     promptId,
     selectedPromptModelConfig,
+    selectedPromptRegistryModelId,
     selectedPromptToolConfig,
   };
 }
