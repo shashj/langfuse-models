@@ -291,6 +291,7 @@ describe("model registry tRPC router", () => {
     const { projectId: otherProjectId } = await createCaller();
     const pricing = await prisma.model.create({
       data: {
+        scope: "PROJECT",
         projectId,
         modelName: `pricing-${randomUUID()}`,
         matchPattern: "x",
