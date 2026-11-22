@@ -4,7 +4,7 @@ import {
 } from "@/src/features/model-registry/validation";
 
 export type CapabilityWarning = {
-  code: "vision" | "tools" | "jsonMode" | "contextWindow";
+  code: "vision" | "tools" | "jsonMode" | "contextWindow" | "datasetUnchecked";
   message: string;
 };
 
@@ -23,21 +23,30 @@ export function experimentCapabilityWarnings(params: {
     "displayName" | "capabilities" | "contextWindow"
   >;
   /**
-   * Facts about the dataset's inputs; undefined while they load or when they could not be read.
-   * For a dataset larger than the sample they describe its first `scannedItems` items only.
+   * Facts about the dataset's inputs. Undefined while they load. Null when they could not be read
+   * (the check gave up or failed), which is not the same as the dataset having nothing to warn
+   * about, so it is reported. For a dataset larger than the sample they describe its first
+   * `scannedItems` items only.
    */
   datasetStats?: {
     maxInputChars: number;
     itemsWithMedia: number;
     scannedItems: number;
     sampled: boolean;
-  };
+  } | null;
   promptHasTools: boolean;
   structuredOutputEnabled: boolean;
 }): CapabilityWarning[] {
   const { model, datasetStats, promptHasTools, structuredOutputEnabled } =
     params;
   const warnings: CapabilityWarning[] = [];
+  if (datasetStats === null) {
+    warnings.push({
+      code: "datasetUnchecked",
+      message:
+        "Langfuse could not check this dataset for images or long items, so warnings about them are not shown. That does not mean it has none.",
+    });
+  }
   // A sampled dataset is described by its first items, so the wording says so instead of
   // implying the whole dataset was read.
   const scope = datasetStats?.sampled

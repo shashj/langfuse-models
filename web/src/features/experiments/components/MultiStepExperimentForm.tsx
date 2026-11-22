@@ -410,8 +410,8 @@ export const MultiStepExperimentForm = ({
   const capabilityWarnings = registryModel.data
     ? experimentCapabilityWarnings({
         model: registryModel.data,
-        // Null when the check gave up on a very large dataset: no warnings rather than wrong ones.
-        datasetStats: datasetStats.data ?? undefined,
+        // Null when the check gave up or failed, which the warnings report; undefined while loading.
+        datasetStats: datasetStats.isError ? null : datasetStats.data,
         promptHasTools: selectedPromptToolConfig.status === "valid",
         structuredOutputEnabled,
       })
