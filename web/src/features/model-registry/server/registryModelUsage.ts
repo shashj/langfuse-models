@@ -6,11 +6,7 @@ import {
   queryClickhouse,
 } from "@langfuse/shared/src/server";
 
-import {
-  REGISTRY_LAST_USED_LOOKBACK_DAYS,
-  REGISTRY_USAGE_WINDOW_DAYS,
-  type RegistryModelUsage,
-} from "@/src/features/model-registry/usage";
+import { type RegistryModelUsage } from "@/src/features/model-registry/usage";
 
 const UsageQueryResult = z.array(
   z.object({
@@ -31,11 +27,12 @@ const USAGE_QUERY: Record<RegistryUsageSource, string> = {
       SELECT
         internal_model_id AS modelId,
         MAX(start_time) AS lastUsed,
-        uniqExactIf(id, start_time >= {since: DateTime64(3)}) AS generationsInWindow
+        uniqExact(id) AS generationsInWindow
       FROM observations
       WHERE project_id = {projectId: String}
         AND type = 'GENERATION'
-        AND start_time >= {lookback: DateTime64(3)}
+        AND start_time >= {from: DateTime64(3)}
+        AND start_time <= {to: DateTime64(3)}
         AND internal_model_id IN ({modelIds: Array(String)})
       GROUP BY internal_model_id
     `,
@@ -43,11 +40,12 @@ const USAGE_QUERY: Record<RegistryUsageSource, string> = {
       SELECT
         model_id AS modelId,
         MAX(start_time) AS lastUsed,
-        uniqExactIf(span_id, start_time >= {since: DateTime64(3)}) AS generationsInWindow
+        uniqExact(span_id) AS generationsInWindow
       FROM events_core
       WHERE project_id = {projectId: String}
         AND type = 'GENERATION'
-        AND start_time >= {lookback: DateTime64(3)}
+        AND start_time >= {from: DateTime64(3)}
+        AND start_time <= {to: DateTime64(3)}
         AND model_id IN ({modelIds: Array(String)})
       GROUP BY model_id
     `,
@@ -59,16 +57,19 @@ const USAGE_QUERY: Record<RegistryUsageSource, string> = {
  * A registry entry is joined to observations through its pricing link: the
  * worker stores the matched pricing model on each observation as
  * `internal_model_id`. Entries without a pricing link cannot be joined and are
- * left out of the result, so callers can tell "not linked" from "no usage". Only the last
- * `REGISTRY_LAST_USED_LOOKBACK_DAYS` days are read, so `lastUsed` is null for a model with no
- * generation in that time.
+ * left out of the result, so callers can tell "not linked" from "no usage". Only the given time
+ * range is read, so the cost follows the range, not the age of the project, and `lastUsed` is the
+ * latest generation in the range, or null when there is none.
  */
 export async function getRegistryModelUsage(params: {
   projectId: string;
   registryModelIds: string[];
+  /** The time range the counts and the last use are read from. */
+  from: Date;
+  to: Date;
   source: RegistryUsageSource;
 }): Promise<Record<string, RegistryModelUsage>> {
-  const { projectId, registryModelIds, source } = params;
+  const { projectId, registryModelIds, from, to, source } = params;
   if (registryModelIds.length === 0) return {};
 
   const entries = await prisma.registryModel.findMany({
@@ -82,18 +83,13 @@ export async function getRegistryModelUsage(params: {
   );
   if (linked.length === 0) return {};
 
-  const day = 24 * 60 * 60 * 1000;
-  const since = new Date(Date.now() - REGISTRY_USAGE_WINDOW_DAYS * day);
-  const lookback = new Date(
-    Date.now() - REGISTRY_LAST_USED_LOOKBACK_DAYS * day,
-  );
   const rows = await queryClickhouse({
     query: USAGE_QUERY[source],
     params: {
       projectId,
       modelIds: linked.map((entry) => entry.pricingModelId),
-      since: convertDateToClickhouseDateTime(since),
-      lookback: convertDateToClickhouseDateTime(lookback),
+      from: convertDateToClickhouseDateTime(from),
+      to: convertDateToClickhouseDateTime(to),
     },
     tags: { route: "modelRegistry.usage", projectId },
   });

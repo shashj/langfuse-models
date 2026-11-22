@@ -309,6 +309,8 @@ export const modelRegistryRouter = createTRPCRouter({
       z.object({
         projectId: z.string(),
         ids: z.array(z.string()).max(200),
+        from: z.date(),
+        to: z.date(),
       }),
     )
     .query(async ({ input, ctx }) => {
@@ -319,19 +321,23 @@ export const modelRegistryRouter = createTRPCRouter({
       return getRegistryModelUsage({
         projectId: input.projectId,
         registryModelIds: input.ids,
+        from: input.from,
+        to: input.to,
         source: ctx.session.user?.v4BetaEnabled ? "events" : "observations",
       });
     }),
 
   /**
-   * Experiments and datasets per registry entry in the last 30 days, matched by the registry id
-   * an experiment stored or by its provider and model.
+   * Experiments and datasets per registry entry in a time range, matched by the registry id an
+   * experiment stored or by its provider and model.
    */
   experimentUsage: protectedProjectProcedure
     .input(
       z.object({
         projectId: z.string(),
         ids: z.array(z.string()).max(200),
+        from: z.date(),
+        to: z.date(),
       }),
     )
     .query(async ({ input, ctx }) => {
@@ -347,6 +353,8 @@ export const modelRegistryRouter = createTRPCRouter({
       return getRegistryExperimentUsage({
         projectId: input.projectId,
         registryModelIds: input.ids,
+        from: input.from,
+        to: input.to,
       });
     }),
 });
