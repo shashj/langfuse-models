@@ -1,3 +1,4 @@
+import { CapabilityWarnings } from "@/src/features/experiments/components/shared/CapabilityWarnings";
 import React from "react";
 import {
   FormControl,
@@ -45,6 +46,7 @@ export const DatasetStep: React.FC<DatasetStepProps> = ({
     selectedDatasetId,
     expectedColumnsForDataset: expectedColumns,
     validationResult,
+    capabilityWarnings,
   } = datasetState;
   const { selectedPromptName, selectedPromptVersion } = promptInfo;
 
@@ -171,6 +173,9 @@ export const DatasetStep: React.FC<DatasetStepProps> = ({
 
       {selectedDatasetId && (
         <>
+          {capabilityWarnings.length > 0 && (
+            <CapabilityWarnings warnings={capabilityWarnings} />
+          )}
           {validationResult?.isValid === false && (
             <Card className="border-dark-yellow bg-light-yellow relative overflow-hidden rounded-md shadow-none group-data-[collapsible=icon]:hidden">
               <CardHeader className="p-2">

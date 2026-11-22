@@ -1,3 +1,4 @@
+import { type CapabilityWarning } from "@/src/features/experiments/fns/experimentCapabilityWarnings";
 import { type UseFormReturn } from "react-hook-form";
 import { type RegistryModelRow } from "@/src/features/model-registry/validation";
 import { type CreateExperiment } from "@/src/features/experiments/types";
@@ -86,6 +87,7 @@ type DatasetState = {
   selectedDataset: { id: string; name: string } | undefined;
   selectedDatasetVersion: Date | undefined;
   validationResult: ValidationResult;
+  capabilityWarnings: CapabilityWarning[];
   expectedColumnsForDataset: {
     inputVariables: string[];
     outputVariableType: PromptType;
@@ -165,5 +167,6 @@ export interface ReviewStepProps {
     structuredOutputEnabled: boolean;
     selectedSchemaName: string | null;
     validationResult: ValidationResult;
+    capabilityWarnings: CapabilityWarning[];
   };
 }

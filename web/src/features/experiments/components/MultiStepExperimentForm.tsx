@@ -23,6 +23,7 @@ import Link from "next/link";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { api } from "@/src/utils/api";
+import { experimentCapabilityWarnings } from "@/src/features/experiments/fns/experimentCapabilityWarnings";
 import { classifyTrpcToastError } from "@/src/utils/trpcErrorClassification";
 import { type RegistryModelRow } from "@/src/features/model-registry/validation";
 import { useModelParams } from "@/src/features/playground/page/hooks/useModelParams";
@@ -388,6 +389,33 @@ export const MultiStepExperimentForm = ({
     },
   );
 
+  // Warnings about the registry model, once the dataset facts they need are known. They wait for
+  // a registry entry: a model chosen from the connection lists has no declared capabilities.
+  const registryModel = api.modelRegistry.getById.useQuery(
+    { projectId, id: registryModelId as string },
+    { enabled: Boolean(registryModelId), refetchOnWindowFocus: false },
+  );
+  const datasetStats = api.experiments.datasetInputStats.useQuery(
+    {
+      projectId,
+      datasetId: datasetId as string,
+      datasetVersion: datasetVersion,
+    },
+    {
+      enabled: Boolean(datasetId),
+      refetchOnWindowFocus: false,
+      staleTime: 1000 * 60 * 5,
+    },
+  );
+  const capabilityWarnings = registryModel.data
+    ? experimentCapabilityWarnings({
+        model: registryModel.data,
+        datasetStats: datasetStats.data,
+        promptHasTools: selectedPromptToolConfig.status === "valid",
+        structuredOutputEnabled,
+      })
+    : [];
+
   const datasets = api.datasets.allDatasetMeta.useQuery(
     { projectId },
     {
@@ -653,6 +681,7 @@ export const MultiStepExperimentForm = ({
     selectedDataset,
     selectedDatasetVersion: datasetVersion,
     validationResult: validationResult.data,
+    capabilityWarnings,
     expectedColumnsForDataset: {
       inputVariables: expectedColumns || [],
       outputVariableType: PromptType.Text,
@@ -696,6 +725,7 @@ export const MultiStepExperimentForm = ({
     structuredOutputEnabled,
     selectedSchemaName,
     validationResult: validationResult.data,
+    capabilityWarnings,
   };
 
   return (

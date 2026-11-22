@@ -1,3 +1,4 @@
+import { CapabilityWarnings } from "@/src/features/experiments/components/shared/CapabilityWarnings";
 import React from "react";
 import {
   Card,
@@ -28,6 +29,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     structuredOutputEnabled,
     selectedSchemaName,
     validationResult,
+    capabilityWarnings,
   } = summary;
   const formValues = form.getValues();
 
@@ -38,6 +40,10 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
         description="Review your experiment configuration before running it. You can go back to any step to make changes."
         errorMessage={errorMessage}
       />
+
+      {capabilityWarnings.length > 0 && (
+        <CapabilityWarnings warnings={capabilityWarnings} />
+      )}
 
       {/* Two-column grid layout */}
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2">

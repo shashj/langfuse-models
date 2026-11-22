@@ -681,7 +681,10 @@ export { createDatasetItemFilterState } from "./repositories/dataset-items";
 export { getDatasetItemById } from "./repositories/dataset-items";
 export { getDatasetItems } from "./repositories/dataset-items";
 export { getDatasetItemsCount } from "./repositories/dataset-items";
-export { countDatasetItemVariableMatches } from "./repositories/dataset-items";
+export {
+  countDatasetItemVariableMatches,
+  getDatasetItemInputStats,
+} from "./repositories/dataset-items";
 export { getDatasetItemsCountGrouped } from "./repositories/dataset-items";
 export { listDatasetVersions } from "./repositories/dataset-items";
 export { getDatasetVersionForRun } from "./repositories/dataset-items";
