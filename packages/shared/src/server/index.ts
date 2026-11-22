@@ -683,7 +683,9 @@ export { getDatasetItems } from "./repositories/dataset-items";
 export { getDatasetItemsCount } from "./repositories/dataset-items";
 export {
   countDatasetItemVariableMatches,
+  DATASET_INPUT_STATS_SAMPLE_SIZE,
   getDatasetItemInputStats,
+  type DatasetItemInputStats,
 } from "./repositories/dataset-items";
 export { getDatasetItemsCountGrouped } from "./repositories/dataset-items";
 export { listDatasetVersions } from "./repositories/dataset-items";

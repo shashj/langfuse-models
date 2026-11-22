@@ -1923,17 +1923,36 @@ async function countDatasetItemVariableMatchesInternal(params: {
   return variablesMap;
 }
 
+/** How many item inputs `getDatasetItemInputStats` reads at most. */
+export const DATASET_INPUT_STATS_SAMPLE_SIZE = 2000;
+const DATASET_INPUT_STATS_TIMEOUT_MS = 5000;
+
+export type DatasetItemInputStats = {
+  /** Length of the longest input among the items read, as JSON text. */
+  maxInputChars: number;
+  /** Items read whose input holds a Langfuse media reference, an image content part or an inline image. */
+  itemsWithMedia: number;
+  /** How many items were read. */
+  scannedItems: number;
+  /** True when the dataset has more items than were read, so the figures are a lower bound. */
+  sampled: boolean;
+};
+
 /**
  * Size and media facts about the inputs of a dataset's active items, for warnings before an
- * experiment runs. `maxInputChars` is the length of the longest item input as JSON text.
- * `itemsWithMedia` counts items whose input holds a Langfuse media reference, an image content
- * part or an inline image.
+ * experiment runs.
+ *
+ * The inputs are large JSON documents that Postgres has to convert to text to measure, so the
+ * query reads at most `DATASET_INPUT_STATS_SAMPLE_SIZE` items, converting each once, and gives up
+ * after `timeoutMs` instead of holding the database. The items read are the first the database
+ * returns, not a random sample. Returns null when it gave up.
  */
 export async function getDatasetItemInputStats(props: {
   projectId: string;
   filterState: FilterState;
   version?: Date;
-}): Promise<{ maxInputChars: number; itemsWithMedia: number }> {
+  timeoutMs?: number;
+}): Promise<DatasetItemInputStats | null> {
   return executeWithDatasetServiceStrategy(OperationType.READ, {
     [Implementation.STATEFUL]: async () =>
       getDatasetItemInputStatsInternal({ ...props, version: undefined }),
@@ -1942,11 +1961,16 @@ export async function getDatasetItemInputStats(props: {
   });
 }
 
+const isStatementTimeout = (error: unknown) =>
+  error instanceof Error &&
+  /canceling statement due to statement timeout|57014/.test(error.message);
+
 async function getDatasetItemInputStatsInternal(params: {
   projectId: string;
   filterState: FilterState;
   version?: Date;
-}): Promise<{ maxInputChars: number; itemsWithMedia: number }> {
+  timeoutMs?: number;
+}): Promise<DatasetItemInputStats | null> {
   const filterCondition = tableColumnsToSqlFilterAndPrefix(
     params.filterState,
     datasetItemsFilterCols,
@@ -1960,31 +1984,53 @@ async function getDatasetItemInputStatsInternal(params: {
       `
     : Prisma.sql`AND di.valid_to IS NULL`;
 
-  // jsonb text has a fixed layout (`"key": value`), so the patterns below do not depend on how
-  // the input was written.
-  const rows = await prisma.$queryRaw<
-    Array<{ max_chars: bigint; with_media: bigint }>
-  >(Prisma.sql`
-    SELECT
-      COALESCE(MAX(length(di.input::jsonb::text)), 0)::bigint AS max_chars,
-      COUNT(*) FILTER (
-        WHERE di.input::jsonb::text LIKE '%@@@langfuseMedia:%'
-          OR di.input::jsonb::text LIKE '%"type": "image_url"%'
-          OR di.input::jsonb::text LIKE '%"type": "image"%'
-          OR di.input::jsonb::text LIKE '%data:image/%'
-      )::bigint AS with_media
-    FROM dataset_items di
-    WHERE di.project_id = ${params.projectId}
-      AND di.is_deleted = false
-      AND di.input IS NOT NULL
-      ${versionCondition}
-      ${filterCondition}
-  `);
+  const cap = DATASET_INPUT_STATS_SAMPLE_SIZE;
 
-  return {
-    maxInputChars: Number(rows[0]?.max_chars ?? 0),
-    itemsWithMedia: Number(rows[0]?.with_media ?? 0),
-  };
+  // jsonb text has a fixed layout (`"key": value`), so the patterns below do not depend on how
+  // the input was written. One row beyond the cap is read to tell a sample from a whole dataset.
+  try {
+    const [, rows] = await prisma.$transaction([
+      prisma.$queryRaw`SELECT set_config('statement_timeout', ${String(params.timeoutMs ?? DATASET_INPUT_STATS_TIMEOUT_MS)}, true)`,
+      prisma.$queryRaw<
+        Array<{ max_chars: bigint; with_media: bigint; fetched: bigint }>
+      >(Prisma.sql`
+        WITH sample AS (
+          SELECT di.input::jsonb::text AS input_text, row_number() OVER () AS n
+          FROM dataset_items di
+          WHERE di.project_id = ${params.projectId}
+            AND di.is_deleted = false
+            AND di.input IS NOT NULL
+            ${versionCondition}
+            ${filterCondition}
+          LIMIT ${cap + 1}
+        )
+        SELECT
+          COALESCE(MAX(length(input_text)) FILTER (WHERE n <= ${cap}), 0)::bigint AS max_chars,
+          COUNT(*) FILTER (
+            WHERE n <= ${cap}
+              AND (
+                input_text LIKE '%@@@langfuseMedia:%'
+                OR input_text LIKE '%"type": "image_url"%'
+                OR input_text LIKE '%"type": "image"%'
+                OR input_text LIKE '%data:image/%'
+              )
+          )::bigint AS with_media,
+          COUNT(*)::bigint AS fetched
+        FROM sample
+      `),
+    ]);
+
+    const fetched = Number(rows[0]?.fetched ?? 0);
+    return {
+      maxInputChars: Number(rows[0]?.max_chars ?? 0),
+      itemsWithMedia: Number(rows[0]?.with_media ?? 0),
+      scannedItems: Math.min(fetched, cap),
+      sampled: fetched > cap,
+    };
+  } catch (error) {
+    if (isStatementTimeout(error)) return null;
+    throw error;
+  }
 }
 
 export async function getDatasetItemsCountGrouped(props: {

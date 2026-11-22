@@ -7,7 +7,12 @@ const capable = {
   capabilities: { tools: true, vision: true, jsonMode: true },
   contextWindow: 128_000,
 };
-const plainDataset = { maxInputChars: 400, itemsWithMedia: 0 };
+const plainDataset = {
+  maxInputChars: 400,
+  itemsWithMedia: 0,
+  scannedItems: 10,
+  sampled: false,
+};
 
 const warn = (
   overrides: Partial<Parameters<typeof experimentCapabilityWarnings>[0]>,
@@ -29,7 +34,12 @@ describe("experimentCapabilityWarnings", () => {
     const bare = { ...capable, capabilities: {} };
     const codes = warn({
       model: bare,
-      datasetStats: { maxInputChars: 400, itemsWithMedia: 3 },
+      datasetStats: {
+        maxInputChars: 400,
+        itemsWithMedia: 3,
+        scannedItems: 10,
+        sampled: false,
+      },
       promptHasTools: true,
       structuredOutputEnabled: true,
     }).map((w) => w.code);
@@ -45,12 +55,22 @@ describe("experimentCapabilityWarnings", () => {
     expect(
       warn({
         model: small,
-        datasetStats: { maxInputChars: 4000, itemsWithMedia: 0 },
+        datasetStats: {
+          maxInputChars: 4000,
+          itemsWithMedia: 0,
+          scannedItems: 10,
+          sampled: false,
+        },
       }),
     ).toEqual([]);
     const [over] = warn({
       model: small,
-      datasetStats: { maxInputChars: 4004, itemsWithMedia: 0 },
+      datasetStats: {
+        maxInputChars: 4004,
+        itemsWithMedia: 0,
+        scannedItems: 10,
+        sampled: false,
+      },
     });
     expect(over.code).toBe("contextWindow");
     expect(over.message).toContain("1,001 tokens");
@@ -60,7 +80,12 @@ describe("experimentCapabilityWarnings", () => {
     expect(
       warn({
         model: { ...capable, contextWindow: null },
-        datasetStats: { maxInputChars: 10_000_000, itemsWithMedia: 0 },
+        datasetStats: {
+          maxInputChars: 10_000_000,
+          itemsWithMedia: 0,
+          scannedItems: 10,
+          sampled: false,
+        },
       }),
     ).toEqual([]);
   });
@@ -72,5 +97,23 @@ describe("experimentCapabilityWarnings", () => {
         model: { ...capable, capabilities: {} },
       }),
     ).toEqual([]);
+  });
+
+  it("says the figures describe the first items when the dataset was only sampled", () => {
+    const [vision, context] = warn({
+      model: { ...capable, capabilities: {}, contextWindow: 1000 },
+      datasetStats: {
+        maxInputChars: 4004,
+        itemsWithMedia: 39,
+        scannedItems: 2000,
+        sampled: true,
+      },
+    });
+    expect(vision.message).toContain(
+      "39 items in the first 2,000 dataset items",
+    );
+    expect(context.message).toContain(
+      "The longest item in the first 2,000 dataset items",
+    );
   });
 });
