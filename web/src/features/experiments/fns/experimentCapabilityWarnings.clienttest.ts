@@ -116,4 +116,14 @@ describe("experimentCapabilityWarnings", () => {
       "The longest item in the first 2,000 dataset items",
     );
   });
+
+  it("reports a dataset that could not be checked, and still warns about the model", () => {
+    const warnings = warn({
+      model: { ...capable, capabilities: {} },
+      datasetStats: null,
+      promptHasTools: true,
+    });
+    expect(warnings.map((w) => w.code)).toEqual(["datasetUnchecked", "tools"]);
+    expect(warnings[0].message).toContain("could not check this dataset");
+  });
 });
