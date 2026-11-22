@@ -7,6 +7,7 @@ import { prisma } from "@langfuse/shared/src/db";
 import { appRouter } from "@/src/server/api/root";
 import { createInnerTRPCContext } from "@/src/server/api/trpc";
 import {
+  commandClickhouse,
   createEvent,
   createEventsCh,
   createObservation,
@@ -61,6 +62,15 @@ const createCaller = async (
     caller: appRouter.createCaller({ ...ctx, prisma }),
   };
 };
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// A time range of the last `days` days. `to` has a margin so the clocks of this process and of
+// ClickHouse need not agree to the second.
+const lastDays = (days: number) => ({
+  from: new Date(Date.now() - days * DAY_MS),
+  to: new Date(Date.now() + 60_000),
+});
 
 const baseModel = (projectId: string, overrides = {}) => ({
   projectId,
@@ -341,6 +351,7 @@ describe("model registry tRPC router", () => {
     ]);
 
     const usage = await caller.modelRegistry.usage({
+      ...lastDays(30),
       projectId,
       ids: [linked.id, unlinked.id],
     });
@@ -354,6 +365,60 @@ describe("model registry tRPC router", () => {
       pricingModelIds: [pricing.id],
     });
     expect(found.map((row) => row.id)).toEqual([linked.id]);
+  });
+
+  it("reads generations only within the requested time range", async () => {
+    const { projectId, caller } = await createCaller();
+    const pricing = await prisma.model.create({
+      data: {
+        scope: "PROJECT",
+        projectId,
+        modelName: `pricing-${randomUUID()}`,
+        matchPattern: "x",
+      },
+    });
+    const linked = await caller.modelRegistry.upsert(
+      baseModel(projectId, { pricingModelId: pricing.id }),
+    );
+    const now = Date.now();
+    await createObservationsCh([
+      createObservation({
+        project_id: projectId,
+        internal_model_id: pricing.id,
+        start_time: now - 2 * DAY_MS,
+      }),
+      createObservation({
+        project_id: projectId,
+        internal_model_id: pricing.id,
+        start_time: now - 40 * DAY_MS,
+      }),
+    ]);
+
+    const read = async (days: number) =>
+      (
+        await caller.modelRegistry.usage({
+          projectId,
+          ids: [linked.id],
+          ...lastDays(days),
+        })
+      )[linked.id];
+
+    // Both generations are in a long range; the latest one is the last use.
+    const long = await read(60);
+    expect(long.generationsInWindow).toBe(2);
+    expect(long.lastUsed?.getTime()).toBeGreaterThan(now - 3 * DAY_MS);
+    // A shorter range leaves the older one out, and a range before both has no last use.
+    expect((await read(7)).generationsInWindow).toBe(1);
+    const before = await caller.modelRegistry.usage({
+      projectId,
+      ids: [linked.id],
+      from: new Date(now - 100 * DAY_MS),
+      to: new Date(now - 50 * DAY_MS),
+    });
+    expect(before[linked.id]).toEqual({
+      lastUsed: null,
+      generationsInWindow: 0,
+    });
   });
 
   it("reads usage from the events table for a v4 user and the legacy table otherwise", async () => {
@@ -403,10 +468,12 @@ describe("model registry tRPC router", () => {
     ]);
 
     const fromEvents = await v4.caller.modelRegistry.usage({
+      ...lastDays(30),
       projectId,
       ids: [entry.id],
     });
     const fromObservations = await legacy.caller.modelRegistry.usage({
+      ...lastDays(30),
       projectId,
       ids: [entry.id],
     });
@@ -421,6 +488,7 @@ describe("model registry tRPC router", () => {
       experimentId: string;
       datasetId: string;
       metadata: Record<string, string>;
+      startTime?: number;
     }) => {
       const spanId = randomUUID();
       return createEvent({
@@ -436,7 +504,7 @@ describe("model registry tRPC router", () => {
         experiment_item_root_span_id: spanId,
         experiment_metadata_names: Object.keys(params.metadata),
         experiment_metadata_values: Object.values(params.metadata),
-        start_time: Date.now() * 1000,
+        start_time: (params.startTime ?? Date.now()) * 1000,
       });
     };
 
@@ -492,6 +560,7 @@ describe("model registry tRPC router", () => {
       ]);
 
       const usage = await caller.modelRegistry.experimentUsage({
+        ...lastDays(30),
         projectId,
         ids: [byId.id, byPair.id, unused.id],
       });
@@ -503,6 +572,81 @@ describe("model registry tRPC router", () => {
         datasets: 0,
         lastRun: null,
       });
+    });
+
+    it("counts every experiment, however many there are", async () => {
+      const { projectId, caller } = await createCaller();
+      const model = await caller.modelRegistry.upsert(baseModel(projectId));
+      // More experiments than a row-per-experiment read could return in one query.
+      const experimentCount = 25_000;
+
+      await commandClickhouse({
+        query: `
+          INSERT INTO events_core (
+            project_id, trace_id, span_id, type, start_time, experiment_id,
+            experiment_dataset_id, experiment_item_root_span_id, experiment_item_id,
+            experiment_metadata_names, experiment_metadata_values
+          )
+          SELECT
+            {projectId: String}, concat('t', toString(number)), concat('s', toString(number)),
+            'GENERATION', now64(6) - toIntervalSecond(rand() % 86400),
+            concat('experiment-', toString(number)), concat('dataset-', toString(number % 5)),
+            concat('s', toString(number)), concat('item-', toString(number)),
+            ['provider', 'model'], [{provider: String}, {modelId: String}]
+          FROM numbers({count: UInt32})`,
+        params: {
+          projectId,
+          provider: model.provider,
+          modelId: model.modelId,
+          count: experimentCount,
+        },
+      });
+
+      const usage = await caller.modelRegistry.experimentUsage({
+        ...lastDays(30),
+        projectId,
+        ids: [model.id],
+      });
+
+      expect(usage[model.id]).toMatchObject({
+        experiments: experimentCount,
+        datasets: 5,
+      });
+    });
+
+    it("counts only the experiments in the requested time range", async () => {
+      const { projectId, caller } = await createCaller();
+      const model = await caller.modelRegistry.upsert(baseModel(projectId));
+      const metadata = { provider: model.provider, model: model.modelId };
+
+      await createEventsCh([
+        experimentEvent({
+          projectId,
+          experimentId: randomUUID(),
+          datasetId: randomUUID(),
+          metadata,
+          startTime: Date.now() - 2 * DAY_MS,
+        }),
+        experimentEvent({
+          projectId,
+          experimentId: randomUUID(),
+          datasetId: randomUUID(),
+          metadata,
+          startTime: Date.now() - 40 * DAY_MS,
+        }),
+      ]);
+
+      const read = async (days: number) =>
+        (
+          await caller.modelRegistry.experimentUsage({
+            projectId,
+            ids: [model.id],
+            ...lastDays(days),
+          })
+        )[model.id].experiments;
+
+      expect(await read(60)).toBe(2);
+      expect(await read(7)).toBe(1);
     });
 
     it("does not count another project's experiments", async () => {
@@ -520,6 +664,7 @@ describe("model registry tRPC router", () => {
       ]);
 
       const usage = await caller.modelRegistry.experimentUsage({
+        ...lastDays(30),
         projectId,
         ids: [model.id],
       });

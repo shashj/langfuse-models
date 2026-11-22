@@ -17,6 +17,14 @@ import { showSuccessToast } from "@/src/features/notifications/showSuccessToast"
 import { useHasProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
 import { usePaginationState } from "@/src/hooks/usePaginationState";
 import { api, reportTrpcErrorWithoutToast } from "@/src/utils/api";
+import { TimeRangePicker } from "@/src/components/date-picker";
+import { PageHeaderControlsPortal } from "@/src/components/layouts/page-header-controls-slot";
+import { useTableDateRange } from "@/src/hooks/useTableDateRange";
+import {
+  rangeToString,
+  TABLE_AGGREGATION_OPTIONS,
+  toAbsoluteTimeRange,
+} from "@/src/utils/date-range-utils";
 
 /** ModelRegistryPage lists the project's registered models and manages them. */
 export default function ModelRegistryPage() {
@@ -24,6 +32,14 @@ export default function ModelRegistryPage() {
   const projectId = router.query.projectId as string;
   const utils = api.useUtils();
   const { isV4 } = useReadPath();
+
+  // The usage columns and both row links follow the time range the tracing tables use.
+  const { timeRange, setTimeRange } = useTableDateRange(projectId, {
+    defaultRelativeAggregation: "last30Days",
+    persistAsDefault: false,
+  });
+  const usageRange = useMemo(() => toAbsoluteTimeRange(timeRange), [timeRange]);
+  const dateRange = rangeToString(timeRange);
 
   const [paginationState, setPaginationState] = usePaginationState(0, 50, {
     page: "pageIndex",
@@ -49,9 +65,15 @@ export default function ModelRegistryPage() {
 
   const registryIds = models.data?.models.map((model) => model.id) ?? [];
   const usage = api.modelRegistry.usage.useQuery(
-    { projectId, ids: registryIds },
     {
-      enabled: models.isSuccess && registryIds.length > 0,
+      projectId,
+      ids: registryIds,
+      from: usageRange?.from as Date,
+      to: usageRange?.to as Date,
+    },
+    {
+      enabled:
+        models.isSuccess && registryIds.length > 0 && Boolean(usageRange),
       refetchOnWindowFocus: false,
       staleTime: 1000 * 60 * 5,
     },
@@ -59,9 +81,18 @@ export default function ModelRegistryPage() {
 
   // Experiments are read from the events table, so they exist only on the v4 read path.
   const experimentUsage = api.modelRegistry.experimentUsage.useQuery(
-    { projectId, ids: registryIds },
     {
-      enabled: isV4 && models.isSuccess && registryIds.length > 0,
+      projectId,
+      ids: registryIds,
+      from: usageRange?.from as Date,
+      to: usageRange?.to as Date,
+    },
+    {
+      enabled:
+        isV4 &&
+        models.isSuccess &&
+        registryIds.length > 0 &&
+        Boolean(usageRange),
       refetchOnWindowFocus: false,
       staleTime: 1000 * 60 * 5,
     },
@@ -102,6 +133,15 @@ export default function ModelRegistryPage() {
         },
       }}
     >
+      <PageHeaderControlsPortal>
+        <TimeRangePicker
+          compact
+          timeRange={timeRange}
+          onTimeRangeChange={setTimeRange}
+          timeRangePresets={TABLE_AGGREGATION_OPTIONS}
+          className="my-0"
+        />
+      </PageHeaderControlsPortal>
       <DialogController<{ model?: RegistryModelRow }>
         renderDialog={({ state, closeDialog }) => (
           <UpsertRegistryModelDialog
@@ -155,6 +195,7 @@ export default function ModelRegistryPage() {
                       projectId,
                       provider: model.provider,
                       modelId: model.modelId,
+                      dateRange,
                     }),
                   )
                 }
@@ -165,6 +206,7 @@ export default function ModelRegistryPage() {
                       projectId,
                       pricingModelId: model.pricingModel.id,
                       isV4,
+                      dateRange,
                     }),
                   );
                 }}

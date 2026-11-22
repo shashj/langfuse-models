@@ -12,7 +12,6 @@ import { createTextTableColumn } from "@/src/components/design-system/table/colu
 import { type LangfuseColumnDef } from "@/src/components/table/types";
 import { numberFormatter } from "@/src/utils/numbers";
 import {
-  REGISTRY_USAGE_WINDOW_DAYS,
   type RegistryExperimentUsage,
   type RegistryModelUsage,
 } from "@/src/features/model-registry/usage";
@@ -24,9 +23,10 @@ import {
 
 const NOT_LINKED_TO_PRICING = "Link pricing";
 const USAGE_DESCRIPTION =
-  "Usage is read from generations that match this model's linked pricing. Link a pricing model to see it.";
+  "Generations in the selected time range that match this model's linked pricing. Link a pricing model to see them.";
 
-const EXPERIMENT_USAGE_DESCRIPTION = `Experiments run in the last ${REGISTRY_USAGE_WINDOW_DAYS} days on this model. An experiment counts for the registry model it started from, or for the provider and model it ran on.`;
+const EXPERIMENT_USAGE_DESCRIPTION =
+  "Experiments in the selected time range that ran on this model. An experiment counts for the registry model it started from, or for the provider and model it ran on.";
 
 /**
  * `usage` is undefined while loading, and has no entry for unlinked models. `experimentUsage` is
@@ -117,7 +117,7 @@ function getColumns(
     createNumberTableColumn<RegistryModelRow>({
       accessorFn: () => undefined,
       id: "generations",
-      header: `Generations, ${REGISTRY_USAGE_WINDOW_DAYS}d`,
+      header: "Generations",
       headerTooltip: { description: USAGE_DESCRIPTION },
       emptyValue: NOT_LINKED_TO_PRICING,
       formatter: (count) => numberFormatter(count, 0),
@@ -132,7 +132,7 @@ function getColumns(
     createNumberTableColumn<RegistryModelRow>({
       accessorFn: () => undefined,
       id: "experiments",
-      header: `Experiments, ${REGISTRY_USAGE_WINDOW_DAYS}d`,
+      header: "Experiments",
       headerTooltip: { description: EXPERIMENT_USAGE_DESCRIPTION },
       emptyValue: "-",
       formatter: (count) => numberFormatter(count, 0),
@@ -147,7 +147,7 @@ function getColumns(
     createNumberTableColumn<RegistryModelRow>({
       accessorFn: () => undefined,
       id: "datasets",
-      header: `Datasets, ${REGISTRY_USAGE_WINDOW_DAYS}d`,
+      header: "Datasets",
       headerTooltip: { description: EXPERIMENT_USAGE_DESCRIPTION },
       emptyValue: "-",
       formatter: (count) => numberFormatter(count, 0),

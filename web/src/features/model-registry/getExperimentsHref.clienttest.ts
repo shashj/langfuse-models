@@ -15,10 +15,14 @@ describe("getRegistryModelExperimentsHref", () => {
       projectId: "project-1",
       provider: "openai",
       modelId: "gpt-4o",
+      dateRange: "30d",
     });
     expect(href.startsWith("/project/project-1/experiments?filter=")).toBe(
       true,
     );
+    expect(
+      new URL(href, "http://localhost").searchParams.get("dateRange"),
+    ).toBe("30d");
     expect(filtersIn(href)).toMatchObject([
       {
         column: "metadata",
@@ -43,7 +47,21 @@ describe("getRegistryModelExperimentsHref", () => {
       projectId: "p",
       provider: "bedrock",
       modelId,
+      dateRange: "30d",
     });
     expect(filtersIn(href)[1]).toMatchObject({ key: "model", value: modelId });
+  });
+
+  it("carries a custom date range through unchanged", () => {
+    const dateRange = "1693872000000-1694131199999";
+    const href = getRegistryModelExperimentsHref({
+      projectId: "p",
+      provider: "openai",
+      modelId: "gpt-4o",
+      dateRange,
+    });
+    expect(
+      new URL(href, "http://localhost").searchParams.get("dateRange"),
+    ).toBe(dateRange);
   });
 });
