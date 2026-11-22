@@ -1,3 +1,4 @@
+import { pickRegistryModelForGeneration } from "@/src/features/model-registry/pickRegistryModel";
 import { memo } from "react";
 import { UpsertModelFormDialogController } from "@/src/features/models/components/UpsertModelFormDialog/UpsertModelFormDialogController";
 import {
@@ -289,7 +290,10 @@ export const ObservationDetailViewHeader = memo(
           searchText: `tokens ${totalUsage}`,
         });
       if (observation.model && observation.internalModelId) {
-        const registryModel = observationRegistryModels.data?.[0];
+        const registryModel = pickRegistryModelForGeneration(
+          observationRegistryModels.data,
+          observation.model,
+        );
         metrics.push({
           id: "model",
           type: "link",

@@ -323,6 +323,43 @@ export async function findModelInPostgres(
   return foundModels[0] ?? null;
 }
 
+/**
+ * The model definition each of the given model names matches, resolved the way ingestion assigns
+ * one to a generation: the same visibility, the same scope precedence and the same tie-breaks as
+ * `findModelInPostgres`. Names that match no definition are absent from the result. Reads
+ * Postgres directly, without the match caches.
+ */
+export async function findModelsInPostgres(p: {
+  projectId: string;
+  models: string[];
+}): Promise<Map<string, { id: string; modelName: string }>> {
+  const names = [...new Set(p.models.filter(Boolean))];
+  if (names.length === 0) return new Map();
+
+  const rows = await prisma.$queryRaw<
+    Array<{ name: string; id: string; modelName: string }>
+  >(Prisma.sql`
+    SELECT n.name AS "name", matched.id AS "id", matched.model_name AS "modelName"
+    FROM unnest(${names}::text[]) AS n(name)
+    CROSS JOIN LATERAL (
+      SELECT id, model_name
+      FROM models
+      WHERE ${visibleModelsSql(p.projectId)}
+        AND n.name ~ match_pattern
+      ORDER BY
+        ${modelScopeRankSql()},
+        start_date DESC NULLS LAST,
+        updated_at DESC,
+        id
+      LIMIT 1
+    ) matched
+  `);
+
+  return new Map(
+    rows.map((row) => [row.name, { id: row.id, modelName: row.modelName }]),
+  );
+}
+
 const NOT_FOUND_TOKEN = "LANGFUSE_MODEL_MATCH_NOT_FOUND" as const;
 
 const addModelNotFoundTokenToRedis = async (key: string) => {

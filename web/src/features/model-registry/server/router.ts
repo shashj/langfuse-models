@@ -10,6 +10,7 @@ import {
   registryModelInclude,
   toRegistryModelRow,
 } from "@/src/features/model-registry/server/mapRegistryModel";
+import { resolveRegistryPricing } from "@/src/features/model-registry/server/registryPricing";
 import { getRegistryExperimentUsage } from "@/src/features/model-registry/server/registryExperimentUsage";
 import { getRegistryModelUsage } from "@/src/features/model-registry/server/registryModelUsage";
 import {
@@ -111,11 +112,17 @@ export const modelRegistryRouter = createTRPCRouter({
         }),
       ]);
 
+      const pricing = await resolveRegistryPricing({
+        projectId: input.projectId,
+        entries: rows,
+      });
+
       return {
         models: rows.map((row) =>
           toRegistryModelRow(
             row,
             runnable.keys.has(runnableKey(row.provider, row.modelId)),
+            pricing.get(row.id) ?? null,
           ),
         ),
         totalCount,
@@ -141,9 +148,14 @@ export const modelRegistryRouter = createTRPCRouter({
         projectId: input.projectId,
         organizationId: ctx.session.orgId,
       });
+      const pricing = await resolveRegistryPricing({
+        projectId: input.projectId,
+        entries: [row],
+      });
       return toRegistryModelRow(
         row,
         runnable.keys.has(runnableKey(row.provider, row.modelId)),
+        pricing.get(row.id) ?? null,
       );
     }),
 
@@ -255,8 +267,9 @@ export const modelRegistryRouter = createTRPCRouter({
     }),
 
   /**
-   * Light lookup for trace views: registry entries by their own id or by the
-   * pricing model that observations store as `internal_model_id`. Skips the
+   * Light lookup for trace views: registry entries by their own id, by `(provider, modelId)` or
+   * by the pricing definition that observations store as `internal_model_id`. An entry is priced
+   * by the definition it is linked to, or else the one that matches its model id. Skips the
    * connection lookup that `getAll` and `getById` do.
    */
   lookup: protectedProjectProcedure
@@ -278,26 +291,66 @@ export const modelRegistryRouter = createTRPCRouter({
         projectId: input.projectId,
       });
 
-      const matchers: Prisma.RegistryModelWhereInput[] = [
+      const direct: Prisma.RegistryModelWhereInput[] = [
         ...(input.ids.length > 0 ? [{ id: { in: input.ids } }] : []),
-        ...(input.pricingModelIds.length > 0
-          ? [{ pricingModelId: { in: input.pricingModelIds } }]
-          : []),
         ...input.pairs.map(({ provider, modelId }) => ({ provider, modelId })),
       ];
-      if (matchers.length === 0) return [];
+      if (direct.length === 0 && input.pricingModelIds.length === 0) return [];
 
-      return ctx.prisma.registryModel.findMany({
-        where: { projectId: input.projectId, OR: matchers },
-        select: {
-          id: true,
-          provider: true,
-          displayName: true,
-          modelId: true,
-          pricingModelId: true,
-        },
-        orderBy: [{ displayName: "asc" }, { id: "asc" }],
+      const select = {
+        id: true,
+        provider: true,
+        displayName: true,
+        modelId: true,
+        pricingModel: { select: { id: true, modelName: true } },
+      } satisfies Prisma.RegistryModelSelect;
+      const requested =
+        direct.length > 0
+          ? await ctx.prisma.registryModel.findMany({
+              where: { projectId: input.projectId, OR: direct },
+              select,
+            })
+          : [];
+      // Entries priced by a requested definition are the ones linked to it and the ones whose
+      // model id matches it, so every entry of the project is a candidate.
+      const candidates =
+        input.pricingModelIds.length > 0
+          ? await ctx.prisma.registryModel.findMany({
+              where: { projectId: input.projectId },
+              select,
+            })
+          : [];
+
+      const entries = [
+        ...new Map(
+          [...requested, ...candidates].map((entry) => [entry.id, entry]),
+        ).values(),
+      ];
+      const pricing = await resolveRegistryPricing({
+        projectId: input.projectId,
+        entries,
       });
+      const requestedIds = new Set(requested.map((entry) => entry.id));
+      const pricedByRequested = new Set(input.pricingModelIds);
+
+      return entries
+        .filter(
+          (entry) =>
+            requestedIds.has(entry.id) ||
+            pricedByRequested.has(pricing.get(entry.id)?.id ?? ""),
+        )
+        .sort(
+          (a, b) =>
+            a.displayName.localeCompare(b.displayName) ||
+            a.id.localeCompare(b.id),
+        )
+        .map((entry) => ({
+          id: entry.id,
+          provider: entry.provider,
+          displayName: entry.displayName,
+          modelId: entry.modelId,
+          pricingModelId: pricing.get(entry.id)?.id ?? null,
+        }));
     }),
 
   /**

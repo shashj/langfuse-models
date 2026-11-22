@@ -4,6 +4,7 @@ import {
   RegistryModelCapabilitiesSchema,
   RegistryModelStatusSchema,
   type RegistryModelRow,
+  type RegistryPricing,
 } from "@/src/features/model-registry/validation";
 
 export const registryModelInclude = {
@@ -17,6 +18,7 @@ type RegistryModelWithPricing = Prisma.RegistryModelGetPayload<{
 export function toRegistryModelRow(
   row: RegistryModelWithPricing,
   connectionAvailable: boolean,
+  pricing: RegistryPricing | null,
 ): RegistryModelRow {
   const status = RegistryModelStatusSchema.safeParse(row.status);
   const capabilities = RegistryModelCapabilitiesSchema.safeParse(
@@ -36,7 +38,7 @@ export function toRegistryModelRow(
     capabilities: capabilities.success ? capabilities.data : {},
     defaultParams:
       row.defaultParams && defaultParams.success ? defaultParams.data : null,
-    pricingModel: row.pricingModel,
+    pricingModel: pricing,
     connectionAvailable,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
