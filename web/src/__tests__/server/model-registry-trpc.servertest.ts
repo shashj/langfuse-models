@@ -7,6 +7,7 @@ import { prisma } from "@langfuse/shared/src/db";
 import { appRouter } from "@/src/server/api/root";
 import { createInnerTRPCContext } from "@/src/server/api/trpc";
 import {
+  commandClickhouse,
   createEvent,
   createEventsCh,
   createObservation,
@@ -16,6 +17,7 @@ import {
   redis,
 } from "@langfuse/shared/src/server";
 import { PromptType } from "@langfuse/shared";
+import { REGISTRY_LAST_USED_LOOKBACK_DAYS } from "@/src/features/model-registry/usage";
 
 const createCaller = async (
   options: {
@@ -356,6 +358,39 @@ describe("model registry tRPC router", () => {
     expect(found.map((row) => row.id)).toEqual([linked.id]);
   });
 
+  it("has no last used for a model whose generations are all older than the lookback", async () => {
+    const { projectId, caller } = await createCaller();
+    const pricing = await prisma.model.create({
+      data: {
+        scope: "PROJECT",
+        projectId,
+        modelName: `pricing-${randomUUID()}`,
+        matchPattern: "x",
+      },
+    });
+    const linked = await caller.modelRegistry.upsert(
+      baseModel(projectId, { pricingModelId: pricing.id }),
+    );
+    const day = 24 * 60 * 60 * 1000;
+    await createObservationsCh([
+      createObservation({
+        project_id: projectId,
+        internal_model_id: pricing.id,
+        start_time: Date.now() - (REGISTRY_LAST_USED_LOOKBACK_DAYS + 30) * day,
+      }),
+    ]);
+
+    const usage = await caller.modelRegistry.usage({
+      projectId,
+      ids: [linked.id],
+    });
+
+    expect(usage[linked.id]).toEqual({
+      lastUsed: null,
+      generationsInWindow: 0,
+    });
+  });
+
   it("reads usage from the events table for a v4 user and the legacy table otherwise", async () => {
     // Langfuse v4 writes generations only to the events tables, so the legacy table is empty.
     const v4 = await createCaller({ v4BetaEnabled: true });
@@ -502,6 +537,45 @@ describe("model registry tRPC router", () => {
         experiments: 0,
         datasets: 0,
         lastRun: null,
+      });
+    });
+
+    it("counts every experiment, however many there are", async () => {
+      const { projectId, caller } = await createCaller();
+      const model = await caller.modelRegistry.upsert(baseModel(projectId));
+      // More experiments than a row-per-experiment read could return in one query.
+      const experimentCount = 25_000;
+
+      await commandClickhouse({
+        query: `
+          INSERT INTO events_core (
+            project_id, trace_id, span_id, type, start_time, experiment_id,
+            experiment_dataset_id, experiment_item_root_span_id, experiment_item_id,
+            experiment_metadata_names, experiment_metadata_values
+          )
+          SELECT
+            {projectId: String}, concat('t', toString(number)), concat('s', toString(number)),
+            'GENERATION', now64(6) - toIntervalSecond(rand() % 86400),
+            concat('experiment-', toString(number)), concat('dataset-', toString(number % 5)),
+            concat('s', toString(number)), concat('item-', toString(number)),
+            ['provider', 'model'], [{provider: String}, {modelId: String}]
+          FROM numbers({count: UInt32})`,
+        params: {
+          projectId,
+          provider: model.provider,
+          modelId: model.modelId,
+          count: experimentCount,
+        },
+      });
+
+      const usage = await caller.modelRegistry.experimentUsage({
+        projectId,
+        ids: [model.id],
+      });
+
+      expect(usage[model.id]).toMatchObject({
+        experiments: experimentCount,
+        datasets: 5,
       });
     });
 

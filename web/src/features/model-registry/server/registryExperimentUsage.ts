@@ -12,16 +12,16 @@ import {
   type RegistryExperimentUsage,
 } from "@/src/features/model-registry/usage";
 
-// More experiments than this in the window are not counted. The Models page shows a count, not a
-// complete list, and a project this busy is better served by the Experiments page.
-const MAX_EXPERIMENTS = 20_000;
-
-const ExperimentRows = z.array(
+// One row per distinct model an experiment ran on, not per experiment. An empty string means
+// the run did not record that key.
+const ModelGroups = z.array(
   z.object({
-    experimentId: z.string(),
-    datasetId: z.string(),
-    metadata: z.record(z.string(), z.string()).default({}),
-    startedAt: z.coerce.date(),
+    provider: z.string(),
+    model: z.string(),
+    registryModelId: z.string(),
+    experiments: z.coerce.number(),
+    datasetIds: z.array(z.string()),
+    lastRun: z.coerce.date(),
   }),
 );
 
@@ -29,9 +29,11 @@ const ExperimentRows = z.array(
  * Experiments per registry model, keyed by registry id.
  *
  * An experiment records the provider and model it ran on, and runs started from the registry also
- * record the entry's id. Each experiment is matched to an entry by that id, falling back to
- * `(provider, modelId)`, so experiments from before the id existed are counted too. Every
- * requested entry is in the result, with zeros when nothing ran on it.
+ * record the entry's id. ClickHouse counts the experiments of the last 30 days per recorded
+ * `(provider, model, registry id)`, which is a handful of rows however many experiments ran. Each
+ * group is then matched to an entry by that id, falling back to `(provider, modelId)`, so
+ * experiments from before the id existed are counted too. Every requested entry is in the
+ * result, with zeros when nothing ran on it.
  */
 export async function getRegistryExperimentUsage(params: {
   projectId: string;
@@ -50,29 +52,37 @@ export async function getRegistryExperimentUsage(params: {
   const since = new Date(
     Date.now() - REGISTRY_USAGE_WINDOW_DAYS * 24 * 60 * 60 * 1000,
   );
-  const rows = ExperimentRows.parse(
+  const groups = ModelGroups.parse(
     await queryClickhouse({
       // Every event of an experiment carries its metadata, as the Experiments page reads it.
       query: `
         SELECT
-          experiment_id AS experimentId,
-          any(experiment_dataset_id) AS datasetId,
-          anyIf(
-            mapFromArrays(experiment_metadata_names, experiment_metadata_values),
-            notEmpty(experiment_metadata_names)
-          ) AS metadata,
-          min(start_time) AS startedAt
-        FROM events_core
-        WHERE project_id = {projectId: String}
-          AND experiment_id != ''
-          AND start_time >= {since: DateTime64(3)}
-        GROUP BY experiment_id
-        LIMIT {limit: UInt32}
+          metadata['provider'] AS provider,
+          metadata['model'] AS model,
+          metadata['registry_model_id'] AS registryModelId,
+          count() AS experiments,
+          groupUniqArray(datasetId) AS datasetIds,
+          max(startedAt) AS lastRun
+        FROM (
+          SELECT
+            experiment_id,
+            any(experiment_dataset_id) AS datasetId,
+            anyIf(
+              mapFromArrays(experiment_metadata_names, experiment_metadata_values),
+              notEmpty(experiment_metadata_names)
+            ) AS metadata,
+            min(start_time) AS startedAt
+          FROM events_core
+          WHERE project_id = {projectId: String}
+            AND experiment_id != ''
+            AND start_time >= {since: DateTime64(3)}
+          GROUP BY experiment_id
+        )
+        GROUP BY provider, model, registryModelId
       `,
       params: {
         projectId,
         since: convertDateToClickhouseDateTime(since),
-        limit: MAX_EXPERIMENTS,
       },
       tags: { route: "modelRegistry.experimentUsage", projectId },
     }),
@@ -86,17 +96,26 @@ export async function getRegistryExperimentUsage(params: {
     ]),
   );
 
-  for (const row of rows) {
-    const entry = resolveRegistryModelForRun(row.metadata, entries);
+  for (const group of groups) {
+    const entry = resolveRegistryModelForRun(
+      {
+        ...(group.registryModelId && {
+          registry_model_id: group.registryModelId,
+        }),
+        ...(group.provider && { provider: group.provider }),
+        ...(group.model && { model: group.model }),
+      },
+      entries,
+    );
     if (!entry || !usage[entry.id]) continue;
 
     const entryUsage = usage[entry.id];
-    entryUsage.experiments += 1;
-    if (!entryUsage.lastRun || row.startedAt > entryUsage.lastRun) {
-      entryUsage.lastRun = row.startedAt;
+    entryUsage.experiments += group.experiments;
+    if (!entryUsage.lastRun || group.lastRun > entryUsage.lastRun) {
+      entryUsage.lastRun = group.lastRun;
     }
     const datasets = datasetsByEntry.get(entry.id) ?? new Set<string>();
-    datasets.add(row.datasetId);
+    group.datasetIds.forEach((datasetId) => datasets.add(datasetId));
     datasetsByEntry.set(entry.id, datasets);
   }
   for (const [id, datasets] of datasetsByEntry) {
