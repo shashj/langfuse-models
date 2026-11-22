@@ -11,6 +11,10 @@ import {
   type UsageRow,
 } from "@/src/features/model-registry/attributeUsage";
 import { resolveRegistryPricing } from "@/src/features/model-registry/server/registryPricing";
+import {
+  alignRangeToMinutes,
+  readThroughUsageCache,
+} from "@/src/features/model-registry/server/usageCache";
 import { type RegistryModelUsage } from "@/src/features/model-registry/usage";
 
 const UsageQueryResult = z.array(
@@ -60,7 +64,7 @@ const USAGE_QUERY: Record<RegistryUsageSource, string> = {
 };
 
 /**
- * Generation usage per registry model, keyed by registry id.
+ * Generation usage per registry model of the project, keyed by registry id.
  *
  * A registry entry is joined to generations through its pricing definition: the worker stores
  * the matched definition on each generation as `internal_model_id`. The definition is the one
@@ -69,24 +73,25 @@ const USAGE_QUERY: Record<RegistryUsageSource, string> = {
  * `attributeUsage`). Entries without a definition are left out of the result, so callers can
  * tell "no pricing" from "no usage".
  *
- * Only the given time range is read, so the cost follows the range, not the age of the project,
- * and `lastUsed` is the latest generation in the range, or null when there is none.
+ * The result covers every entry, whichever page of the Models table asked, so paging does not
+ * read ClickHouse again, and is cached for a minute. Only the given time range is read, so the
+ * cost follows the range, not the age of the project, and `lastUsed` is the latest generation in
+ * the range, or null when there is none.
  */
 export async function getRegistryModelUsage(params: {
   projectId: string;
-  registryModelIds: string[];
   /** The time range the counts and the last use are read from. */
   from: Date;
   to: Date;
   source: RegistryUsageSource;
 }): Promise<Record<string, RegistryModelUsage>> {
-  const { projectId, registryModelIds, from, to, source } = params;
-  if (registryModelIds.length === 0) return {};
+  const { projectId, source } = params;
+  const { from, to } = alignRangeToMinutes(params);
 
-  // All entries of the project, not only the requested ones: an entry on another page that
-  // shares a definition takes its share of that definition's generations.
+  // Ordered, because the entries are part of the cache key and a different order is a miss.
   const rows = await prisma.registryModel.findMany({
     where: { projectId },
+    orderBy: { id: "asc" },
     select: {
       id: true,
       modelId: true,
@@ -100,32 +105,31 @@ export async function getRegistryModelUsage(params: {
     pricingModelId: pricing.get(row.id)?.id ?? null,
   }));
 
-  const requested = new Set(registryModelIds);
   const pricingModelIds = [
-    ...new Set(
-      entries.flatMap((entry) =>
-        requested.has(entry.id) && entry.pricingModelId
-          ? [entry.pricingModelId]
-          : [],
-      ),
-    ),
+    ...new Set(entries.flatMap((entry) => entry.pricingModelId ?? [])),
   ];
   if (pricingModelIds.length === 0) return {};
 
-  const generations = await queryClickhouse({
-    query: USAGE_QUERY[source],
-    params: {
-      projectId,
-      pricingModelIds,
-      from: convertDateToClickhouseDateTime(from),
-      to: convertDateToClickhouseDateTime(to),
-    },
-    tags: { route: "modelRegistry.usage", projectId },
-  });
+  return readThroughUsageCache({
+    scope: "generations",
+    projectId,
+    inputs: { source, from, to, entries },
+    compute: async () => {
+      const generations = await queryClickhouse({
+        query: USAGE_QUERY[source],
+        params: {
+          projectId,
+          pricingModelIds,
+          from: convertDateToClickhouseDateTime(from),
+          to: convertDateToClickhouseDateTime(to),
+        },
+        tags: { route: "modelRegistry.usage", projectId },
+      });
 
-  return attributeUsage({
-    entries,
-    requestedIds: registryModelIds,
-    rows: UsageQueryResult.parse(generations) satisfies UsageRow[],
+      return attributeUsage({
+        entries,
+        rows: UsageQueryResult.parse(generations) satisfies UsageRow[],
+      });
+    },
   });
 }

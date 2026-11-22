@@ -16,8 +16,8 @@ export type UsageRow = {
 };
 
 /**
- * Usage per requested registry entry, from generations counted per pricing definition and
- * provided model name.
+ * Usage per registry entry, from generations counted per pricing definition and provided model
+ * name.
  *
  * A generation is joined to an entry through its pricing definition. Several entries can share
  * one definition, for example `gpt-4o` and a dated `gpt-4o-2024-08-06`, and a generation must not
@@ -25,19 +25,17 @@ export type UsageRow = {
  * model name as its model id, only that entry gets it. Otherwise the generation counts for every
  * entry that shares the definition.
  *
- * Requested entries without a pricing definition are left out of the result, so callers can tell
- * "no pricing" from "no usage".
+ * Entries without a pricing definition are left out of the result, so callers can tell "no
+ * pricing" from "no usage".
  */
 export function attributeUsage(params: {
-  /** Every entry of the project, so entries on other pages still take their share. */
+  /** Every entry of the project. */
   entries: readonly UsageEntry[];
-  requestedIds: readonly string[];
   rows: readonly UsageRow[];
 }): Record<string, RegistryModelUsage> {
-  const requested = new Set(params.requestedIds);
   const usage: Record<string, RegistryModelUsage> = {};
   for (const entry of params.entries) {
-    if (requested.has(entry.id) && entry.pricingModelId) {
+    if (entry.pricingModelId) {
       usage[entry.id] = { lastUsed: null, generationsInWindow: 0 };
     }
   }
