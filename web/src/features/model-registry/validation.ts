@@ -12,10 +12,9 @@ export const CAPABILITY_KEYS = [
   "reasoning",
 ] as const;
 
-export const CAPABILITY_LABELS: Record<
-  (typeof CAPABILITY_KEYS)[number],
-  string
-> = {
+export type CapabilityKey = (typeof CAPABILITY_KEYS)[number];
+
+export const CAPABILITY_LABELS: Record<CapabilityKey, string> = {
   tools: "Tool calling",
   vision: "Vision",
   jsonMode: "JSON mode",

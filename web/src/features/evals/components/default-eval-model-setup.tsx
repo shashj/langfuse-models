@@ -20,6 +20,8 @@ import {
 } from "@/src/components/ui/dialog";
 import { getFinalModelParams } from "@/src/utils/getFinalModelParams";
 import { Pencil } from "@langfuse/icons";
+import { EvaluatorRegistryModelField } from "@/src/features/model-registry/components/EvaluatorRegistryModelField";
+import { useRegistryPresetModel } from "@/src/features/model-registry/hooks/useRegistryPresetModel";
 import { ConfirmationDialogController } from "@/src/components/design-system/ConfirmationDialogController/ConfirmationDialogController";
 
 type DefaultEvalModelSuccessMessage = {
@@ -45,6 +47,7 @@ function useDefaultEvalModelSetup({
     scope: "evalDefaultModel:CUD",
   });
 
+  const registryPreset = useRegistryPresetModel();
   const {
     modelParams,
     setModelParams,
@@ -53,7 +56,9 @@ function useDefaultEvalModelSetup({
     availableModels,
     providerModelCombinations,
     availableProviders,
-  } = useModelParams();
+  } = useModelParams(undefined, {
+    promptConfigModel: registryPreset.presetModel,
+  });
 
   const { selectedModel, isDefaultModelLoading } = useEvaluationModel(
     projectId,
@@ -85,6 +90,8 @@ function useDefaultEvalModelSetup({
   };
 
   return {
+    projectId,
+    registryPreset,
     availableModels,
     availableProviders,
     executeUpsertMutation,
@@ -110,6 +117,14 @@ function DefaultEvalModelFields({
 }) {
   return (
     <>
+      <EvaluatorRegistryModelField
+        projectId={setup.projectId}
+        provider={setup.modelParams.provider.value}
+        model={setup.modelParams.model.value}
+        picked={setup.registryPreset.picked}
+        onPick={setup.registryPreset.pick}
+        disabled={!setup.hasWriteAccess}
+      />
       <ModelParameters
         customHeader={<p className="leading-none font-bold">LLM connection</p>}
         modelParams={setup.modelParams}

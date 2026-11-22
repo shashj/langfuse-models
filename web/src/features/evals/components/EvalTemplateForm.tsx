@@ -49,6 +49,8 @@ import { templateFormSchema } from "@/src/features/evals/utils/template-form-sch
 import { CodeMirrorEditor } from "@/src/components/editor/CodeMirrorEditor";
 import { Card, CardContent } from "@/src/components/ui/card";
 import { type RouterInput } from "@/src/utils/types";
+import { EvaluatorRegistryModelField } from "@/src/features/model-registry/components/EvaluatorRegistryModelField";
+import { useRegistryPresetModel } from "@/src/features/model-registry/hooks/useRegistryPresetModel";
 import { useEvaluationModel } from "@/src/features/evals/hooks/useEvaluationModel";
 import { Checkbox } from "@/src/components/design-system/Checkbox/Checkbox";
 import { ManageDefaultEvalModel } from "@/src/features/evals/components/ManageDefaultEvalModel";
@@ -224,6 +226,7 @@ const InnerEvalTemplateForm = (props: {
 
   // updates the model params based on the pre-filled data
   // either form update or from langfuse-generated template
+  const registryPreset = useRegistryPresetModel();
   const {
     modelParams,
     setModelParams,
@@ -232,7 +235,9 @@ const InnerEvalTemplateForm = (props: {
     availableModels,
     providerModelCombinations,
     availableProviders,
-  } = useModelParams();
+  } = useModelParams(undefined, {
+    promptConfigModel: registryPreset.presetModel,
+  });
 
   useEvaluationModel(
     props.projectId,
@@ -714,24 +719,34 @@ const InnerEvalTemplateForm = (props: {
                     </p>
                   </div>
                 ) : (
-                  <ModelParameters
-                    customHeader={
-                      <p className="text-sm leading-none font-bold">
-                        Custom model configuration
-                      </p>
-                    }
-                    {...{
-                      modelParams,
-                      availableModels,
-                      providerModelCombinations,
-                      availableProviders,
-                      updateModelParamValue: updateModelParamValue,
-                      setModelParamEnabled,
-                      modelParamsDescription:
-                        "Select a model which supports function calling.",
-                    }}
-                    formDisabled={!props.isEditing}
-                  />
+                  <div className="flex flex-col gap-4">
+                    <EvaluatorRegistryModelField
+                      projectId={props.projectId}
+                      provider={modelParams.provider.value}
+                      model={modelParams.model.value}
+                      picked={registryPreset.picked}
+                      onPick={registryPreset.pick}
+                      disabled={!props.isEditing}
+                    />
+                    <ModelParameters
+                      customHeader={
+                        <p className="text-sm leading-none font-bold">
+                          Custom model configuration
+                        </p>
+                      }
+                      {...{
+                        modelParams,
+                        availableModels,
+                        providerModelCombinations,
+                        availableProviders,
+                        updateModelParamValue: updateModelParamValue,
+                        setModelParamEnabled,
+                        modelParamsDescription:
+                          "Select a model which supports function calling.",
+                      }}
+                      formDisabled={!props.isEditing}
+                    />
+                  </div>
                 ))}
             </CardContent>
           </Card>
