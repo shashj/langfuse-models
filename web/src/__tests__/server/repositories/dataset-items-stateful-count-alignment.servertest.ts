@@ -10,6 +10,8 @@ import { prisma } from "@langfuse/shared/src/db";
 import {
   countDatasetItemVariableMatches,
   createDatasetItemFilterState,
+  createOrgProjectAndApiKey,
+  getDatasetItemInputStats,
   getDatasetItemsCount,
 } from "@langfuse/shared/src/server";
 import { v4 } from "uuid";
@@ -104,5 +106,65 @@ describe("STATEFUL getDatasetItemsCount vs countDatasetItemVariableMatches", () 
     // Two current non-deleted ACTIVE rows: currentItemId + supersededItemId latest.
     expect(totalItems).toBe(2);
     expect(variablesMap).toEqual({ name: 2, city: 1 });
+  });
+});
+
+describe("STATEFUL getDatasetItemInputStats", () => {
+  it("reports the longest input and the items with media, current rows only", async () => {
+    const { project } = await createOrgProjectAndApiKey();
+    const projectId = project.id;
+    const datasetId = v4();
+    await prisma.dataset.create({
+      data: { id: datasetId, name: v4(), projectId },
+    });
+    const now = new Date();
+    const earlier = new Date(now.getTime() - 60_000);
+    const item = (input: object, extra: object = {}) =>
+      prisma.datasetItem.create({
+        data: {
+          id: v4(),
+          projectId,
+          datasetId,
+          status: "ACTIVE",
+          input,
+          expectedOutput: "ok",
+          validFrom: now,
+          validTo: null,
+          isDeleted: false,
+          ...extra,
+        },
+      });
+
+    const longText = "x".repeat(500);
+    await item({ question: "short" });
+    await item({ question: longText });
+    await item({
+      image: "@@@langfuseMedia:type=image/png|id=abc|source=bytes@@@",
+    });
+    await item({
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "image_url", image_url: { url: "u" } }],
+        },
+      ],
+    });
+    // A superseded row with a huge input and media must not count.
+    await item(
+      { question: "y".repeat(5000), image: "data:image/png;base64,AAAA" },
+      { validFrom: earlier, validTo: now },
+    );
+
+    const stats = await getDatasetItemInputStats({
+      projectId,
+      filterState: createDatasetItemFilterState({
+        datasetIds: [datasetId],
+        status: "ACTIVE",
+      }),
+    });
+
+    expect(stats.itemsWithMedia).toBe(2);
+    expect(stats.maxInputChars).toBeGreaterThanOrEqual(longText.length);
+    expect(stats.maxInputChars).toBeLessThan(1000);
   });
 });

@@ -13,6 +13,7 @@ import {
   getBooleanScoresGroupedByName,
   getDatasetItemsCount,
   countDatasetItemVariableMatches,
+  getDatasetItemInputStats,
   getEventsGroupedByExperimentDatasetId,
   getExperimentsCountFromEvents,
   getExperimentsFromEvents,
@@ -94,6 +95,35 @@ const ConfigResponse = z.discriminatedUnion("isValid", [
 ]);
 
 export const experimentsRouter = createTRPCRouter({
+  /**
+   * Size and media facts about a dataset's active item inputs, for capability warnings on the
+   * experiment form.
+   */
+  datasetInputStats: protectedProjectProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        datasetId: z.string(),
+        datasetVersion: z.coerce.date().optional(),
+      }),
+    )
+    .query(async ({ input, ctx }) => {
+      throwIfNoProjectAccess({
+        session: ctx.session,
+        projectId: input.projectId,
+        scope: "promptExperiments:CUD",
+      });
+
+      return getDatasetItemInputStats({
+        projectId: input.projectId,
+        filterState: createDatasetItemFilterState({
+          datasetIds: [input.datasetId],
+          status: "ACTIVE",
+        }),
+        version: input.datasetVersion,
+      });
+    }),
+
   validateConfig: protectedProjectProcedure
     .input(
       z.object({

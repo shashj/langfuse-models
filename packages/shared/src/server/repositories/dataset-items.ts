@@ -1923,6 +1923,70 @@ async function countDatasetItemVariableMatchesInternal(params: {
   return variablesMap;
 }
 
+/**
+ * Size and media facts about the inputs of a dataset's active items, for warnings before an
+ * experiment runs. `maxInputChars` is the length of the longest item input as JSON text.
+ * `itemsWithMedia` counts items whose input holds a Langfuse media reference, an image content
+ * part or an inline image.
+ */
+export async function getDatasetItemInputStats(props: {
+  projectId: string;
+  filterState: FilterState;
+  version?: Date;
+}): Promise<{ maxInputChars: number; itemsWithMedia: number }> {
+  return executeWithDatasetServiceStrategy(OperationType.READ, {
+    [Implementation.STATEFUL]: async () =>
+      getDatasetItemInputStatsInternal({ ...props, version: undefined }),
+    [Implementation.VERSIONED]: async () =>
+      getDatasetItemInputStatsInternal(props),
+  });
+}
+
+async function getDatasetItemInputStatsInternal(params: {
+  projectId: string;
+  filterState: FilterState;
+  version?: Date;
+}): Promise<{ maxInputChars: number; itemsWithMedia: number }> {
+  const filterCondition = tableColumnsToSqlFilterAndPrefix(
+    params.filterState,
+    datasetItemsFilterCols,
+    "dataset_item_events",
+  );
+
+  const versionCondition = params.version
+    ? Prisma.sql`
+        AND di.valid_from <= ${params.version}
+        AND (di.valid_to IS NULL OR di.valid_to > ${params.version})
+      `
+    : Prisma.sql`AND di.valid_to IS NULL`;
+
+  // jsonb text has a fixed layout (`"key": value`), so the patterns below do not depend on how
+  // the input was written.
+  const rows = await prisma.$queryRaw<
+    Array<{ max_chars: bigint; with_media: bigint }>
+  >(Prisma.sql`
+    SELECT
+      COALESCE(MAX(length(di.input::jsonb::text)), 0)::bigint AS max_chars,
+      COUNT(*) FILTER (
+        WHERE di.input::jsonb::text LIKE '%@@@langfuseMedia:%'
+          OR di.input::jsonb::text LIKE '%"type": "image_url"%'
+          OR di.input::jsonb::text LIKE '%"type": "image"%'
+          OR di.input::jsonb::text LIKE '%data:image/%'
+      )::bigint AS with_media
+    FROM dataset_items di
+    WHERE di.project_id = ${params.projectId}
+      AND di.is_deleted = false
+      AND di.input IS NOT NULL
+      ${versionCondition}
+      ${filterCondition}
+  `);
+
+  return {
+    maxInputChars: Number(rows[0]?.max_chars ?? 0),
+    itemsWithMedia: Number(rows[0]?.with_media ?? 0),
+  };
+}
+
 export async function getDatasetItemsCountGrouped(props: {
   projectId: string;
   datasetIds: string[];
