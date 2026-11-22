@@ -1,7 +1,11 @@
 import { useMemo, useState } from "react";
 
 import { AsyncSelectInput } from "@/src/components/design-system/AsyncSelectInput/AsyncSelectInput";
-import { type RegistryModelRow } from "@/src/features/model-registry/validation";
+import { getRegistryModelOptionLabel } from "@/src/features/model-registry/registryModelOption";
+import {
+  type CapabilityKey,
+  type RegistryModelRow,
+} from "@/src/features/model-registry/validation";
 import { useDebounce } from "@/src/hooks/useDebounce";
 import { api } from "@/src/utils/api";
 
@@ -18,12 +22,17 @@ export function RegistryModelSelect({
   value,
   onSelect,
   id,
+  requiredCapability,
+  disabled,
 }: {
   projectId: string;
   /** The selected entry, or null for "Other model". */
   value: { id: string; label: string } | null;
   onSelect: (entry: RegistryModelRow | null) => void;
   id?: string;
+  /** Entries not marked for this capability get a note in their label. */
+  requiredCapability?: CapabilityKey;
+  disabled?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
@@ -44,17 +53,16 @@ export function RegistryModelSelect({
       ...(query ? [] : [{ value: OTHER_MODEL, label: OTHER_MODEL_LABEL }]),
       ...rows.map((model) => ({
         value: model.id,
-        label: model.connectionAvailable
-          ? `${model.displayName} (${model.provider})`
-          : `${model.displayName} (${model.provider}, no connection)`,
+        label: getRegistryModelOptionLabel(model, requiredCapability),
       })),
     ],
-    [rows, query],
+    [rows, query, requiredCapability],
   );
 
   return (
     <AsyncSelectInput<string>
       id={id}
+      disabled={disabled}
       value={
         value
           ? { value: value.id, label: value.label }
