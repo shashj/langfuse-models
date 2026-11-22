@@ -6,13 +6,19 @@ import {
   queryClickhouse,
 } from "@langfuse/shared/src/server";
 
+import {
+  attributeUsage,
+  type UsageRow,
+} from "@/src/features/model-registry/attributeUsage";
+import { resolveRegistryPricing } from "@/src/features/model-registry/server/registryPricing";
 import { type RegistryModelUsage } from "@/src/features/model-registry/usage";
 
 const UsageQueryResult = z.array(
   z.object({
-    modelId: z.string(),
+    pricingModelId: z.string(),
+    providedModelName: z.string(),
     lastUsed: z.coerce.date(),
-    generationsInWindow: z.coerce.number(),
+    generations: z.coerce.number(),
   }),
 );
 
@@ -25,41 +31,46 @@ export type RegistryUsageSource = "events" | "observations";
 const USAGE_QUERY: Record<RegistryUsageSource, string> = {
   observations: `
       SELECT
-        internal_model_id AS modelId,
+        internal_model_id AS pricingModelId,
+        ifNull(provided_model_name, '') AS providedModelName,
         MAX(start_time) AS lastUsed,
-        uniqExact(id) AS generationsInWindow
+        uniqExact(id) AS generations
       FROM observations
       WHERE project_id = {projectId: String}
         AND type = 'GENERATION'
         AND start_time >= {from: DateTime64(3)}
         AND start_time <= {to: DateTime64(3)}
-        AND internal_model_id IN ({modelIds: Array(String)})
-      GROUP BY internal_model_id
+        AND internal_model_id IN ({pricingModelIds: Array(String)})
+      GROUP BY pricingModelId, providedModelName
     `,
   events: `
       SELECT
-        model_id AS modelId,
+        model_id AS pricingModelId,
+        provided_model_name AS providedModelName,
         MAX(start_time) AS lastUsed,
-        uniqExact(span_id) AS generationsInWindow
+        uniqExact(span_id) AS generations
       FROM events_core
       WHERE project_id = {projectId: String}
         AND type = 'GENERATION'
         AND start_time >= {from: DateTime64(3)}
         AND start_time <= {to: DateTime64(3)}
-        AND model_id IN ({modelIds: Array(String)})
-      GROUP BY model_id
+        AND model_id IN ({pricingModelIds: Array(String)})
+      GROUP BY pricingModelId, providedModelName
     `,
 };
 
 /**
  * Generation usage per registry model, keyed by registry id.
  *
- * A registry entry is joined to observations through its pricing link: the
- * worker stores the matched pricing model on each observation as
- * `internal_model_id`. Entries without a pricing link cannot be joined and are
- * left out of the result, so callers can tell "not linked" from "no usage". Only the given time
- * range is read, so the cost follows the range, not the age of the project, and `lastUsed` is the
- * latest generation in the range, or null when there is none.
+ * A registry entry is joined to generations through its pricing definition: the worker stores
+ * the matched definition on each generation as `internal_model_id`. The definition is the one
+ * the user picked for the entry, or else the one that matches its model id. When several entries
+ * share a definition, a generation counts for the entry whose model id is its model name (see
+ * `attributeUsage`). Entries without a definition are left out of the result, so callers can
+ * tell "no pricing" from "no usage".
+ *
+ * Only the given time range is read, so the cost follows the range, not the age of the project,
+ * and `lastUsed` is the latest generation in the range, or null when there is none.
  */
 export async function getRegistryModelUsage(params: {
   projectId: string;
@@ -72,42 +83,49 @@ export async function getRegistryModelUsage(params: {
   const { projectId, registryModelIds, from, to, source } = params;
   if (registryModelIds.length === 0) return {};
 
-  const entries = await prisma.registryModel.findMany({
-    where: { projectId, id: { in: registryModelIds } },
-    select: { id: true, pricingModelId: true },
+  // All entries of the project, not only the requested ones: an entry on another page that
+  // shares a definition takes its share of that definition's generations.
+  const rows = await prisma.registryModel.findMany({
+    where: { projectId },
+    select: {
+      id: true,
+      modelId: true,
+      pricingModel: { select: { id: true, modelName: true } },
+    },
   });
-  const linked = entries.flatMap((entry) =>
-    entry.pricingModelId
-      ? [{ id: entry.id, pricingModelId: entry.pricingModelId }]
-      : [],
-  );
-  if (linked.length === 0) return {};
+  const pricing = await resolveRegistryPricing({ projectId, entries: rows });
+  const entries = rows.map((row) => ({
+    id: row.id,
+    modelId: row.modelId,
+    pricingModelId: pricing.get(row.id)?.id ?? null,
+  }));
 
-  const rows = await queryClickhouse({
+  const requested = new Set(registryModelIds);
+  const pricingModelIds = [
+    ...new Set(
+      entries.flatMap((entry) =>
+        requested.has(entry.id) && entry.pricingModelId
+          ? [entry.pricingModelId]
+          : [],
+      ),
+    ),
+  ];
+  if (pricingModelIds.length === 0) return {};
+
+  const generations = await queryClickhouse({
     query: USAGE_QUERY[source],
     params: {
       projectId,
-      modelIds: linked.map((entry) => entry.pricingModelId),
+      pricingModelIds,
       from: convertDateToClickhouseDateTime(from),
       to: convertDateToClickhouseDateTime(to),
     },
     tags: { route: "modelRegistry.usage", projectId },
   });
 
-  const byPricingModelId = new Map(
-    UsageQueryResult.parse(rows).map((row) => [row.modelId, row]),
-  );
-
-  return Object.fromEntries(
-    linked.map(({ id, pricingModelId }) => {
-      const row = byPricingModelId.get(pricingModelId);
-      return [
-        id,
-        {
-          lastUsed: row?.lastUsed ?? null,
-          generationsInWindow: row?.generationsInWindow ?? 0,
-        } satisfies RegistryModelUsage,
-      ];
-    }),
-  );
+  return attributeUsage({
+    entries,
+    requestedIds: registryModelIds,
+    rows: UsageQueryResult.parse(generations) satisfies UsageRow[],
+  });
 }

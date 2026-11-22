@@ -8,6 +8,7 @@ import { appRouter } from "@/src/server/api/root";
 import { createInnerTRPCContext } from "@/src/server/api/trpc";
 import {
   commandClickhouse,
+  findModelsInPostgres,
   createEvent,
   createEventsCh,
   createObservation,
@@ -669,6 +670,154 @@ describe("model registry tRPC router", () => {
         ids: [model.id],
       });
       expect(usage[model.id].experiments).toBe(0);
+    });
+  });
+
+  describe("automatic pricing", () => {
+    // A definition whose pattern matches names that start with a prefix unique to the test.
+    const definition = (params: {
+      scope: "PROJECT" | "ORGANIZATION";
+      projectId: string;
+      organizationId: string;
+      matchPattern: string;
+    }) =>
+      prisma.model.create({
+        data: {
+          scope: params.scope,
+          ...(params.scope === "PROJECT"
+            ? { projectId: params.projectId }
+            : { organizationId: params.organizationId }),
+          modelName: `definition-${randomUUID()}`,
+          matchPattern: params.matchPattern,
+        },
+      });
+
+    it("resolves a model name to the definition ingestion would use, project before organization", async () => {
+      const { projectId, org } = await createCaller();
+      const prefix = `probe-${randomUUID()}`;
+      const projectDefinition = await definition({
+        scope: "PROJECT",
+        projectId,
+        organizationId: org.id,
+        matchPattern: `^${prefix}-a$`,
+      });
+      const orgDefinition = await definition({
+        scope: "ORGANIZATION",
+        projectId,
+        organizationId: org.id,
+        matchPattern: `^${prefix}-.*$`,
+      });
+
+      const matches = await findModelsInPostgres({
+        projectId,
+        models: [`${prefix}-a`, `${prefix}-b`, `no-match-${prefix}`],
+      });
+
+      expect(matches.get(`${prefix}-a`)?.id).toBe(projectDefinition.id);
+      expect(matches.get(`${prefix}-b`)?.id).toBe(orgDefinition.id);
+      expect(matches.has(`no-match-${prefix}`)).toBe(false);
+    });
+
+    it("prices an entry from its model id unless a definition is picked", async () => {
+      const { projectId, org, caller } = await createCaller();
+      const prefix = `auto-${randomUUID()}`;
+      const matching = await definition({
+        scope: "PROJECT",
+        projectId,
+        organizationId: org.id,
+        matchPattern: `^${prefix}.*$`,
+      });
+      const picked = await definition({
+        scope: "PROJECT",
+        projectId,
+        organizationId: org.id,
+        matchPattern: "^never-matches-anything$",
+      });
+      await caller.modelRegistry.upsert(
+        baseModel(projectId, {
+          modelId: `${prefix}-auto`,
+          displayName: "Auto",
+        }),
+      );
+      await caller.modelRegistry.upsert(
+        baseModel(projectId, {
+          modelId: `${prefix}-picked`,
+          displayName: "Picked",
+          pricingModelId: picked.id,
+        }),
+      );
+      await caller.modelRegistry.upsert(
+        baseModel(projectId, {
+          modelId: "no-definition-matches",
+          displayName: "None",
+        }),
+      );
+
+      const { models } = await caller.modelRegistry.getAll({
+        projectId,
+        searchString: "",
+        page: 0,
+        limit: 50,
+      });
+      const byName = Object.fromEntries(
+        models.map((m) => [m.displayName, m.pricingModel]),
+      );
+
+      expect(byName.Auto).toMatchObject({ id: matching.id, source: "matched" });
+      expect(byName.Picked).toMatchObject({ id: picked.id, source: "linked" });
+      expect(byName.None).toBeNull();
+    });
+
+    it("counts a generation for the entry named like it, and finds entries by their definition", async () => {
+      const { projectId, org, caller } = await createCaller();
+      const prefix = `shared-${randomUUID()}`;
+      const shared = await definition({
+        scope: "PROJECT",
+        projectId,
+        organizationId: org.id,
+        matchPattern: `^${prefix}.*$`,
+      });
+      const base = await caller.modelRegistry.upsert(
+        baseModel(projectId, { modelId: prefix, displayName: "Base" }),
+      );
+      const dated = await caller.modelRegistry.upsert(
+        baseModel(projectId, {
+          modelId: `${prefix}-2024`,
+          displayName: "Dated",
+        }),
+      );
+      const now = Date.now();
+      const generation = (providedModelName: string, offset: number) =>
+        createObservation({
+          project_id: projectId,
+          internal_model_id: shared.id,
+          provided_model_name: providedModelName,
+          start_time: now - offset * 60_000,
+        });
+      await createObservationsCh([
+        generation(prefix, 1),
+        generation(prefix, 2),
+        generation(`${prefix}-2024`, 3),
+      ]);
+
+      const usage = await caller.modelRegistry.usage({
+        projectId,
+        ids: [base.id, dated.id],
+        ...lastDays(1),
+      });
+      expect(usage[base.id].generationsInWindow).toBe(2);
+      expect(usage[dated.id].generationsInWindow).toBe(1);
+
+      const found = await caller.modelRegistry.lookup({
+        projectId,
+        pricingModelIds: [shared.id],
+      });
+      expect(found.map((entry) => entry.id).sort()).toEqual(
+        [base.id, dated.id].sort(),
+      );
+      expect(found.every((entry) => entry.pricingModelId === shared.id)).toBe(
+        true,
+      );
     });
   });
 });

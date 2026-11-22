@@ -21,9 +21,19 @@ import {
   type RegistryModelRow,
 } from "@/src/features/model-registry/validation";
 
-const NOT_LINKED_TO_PRICING = "Link pricing";
+const NO_PRICING_MATCH = "No pricing match";
 const USAGE_DESCRIPTION =
-  "Generations in the selected time range that match this model's linked pricing. Link a pricing model to see them.";
+  "Generations in the selected time range that match this model's pricing definition. A model that no definition matches has no usage here: add one under Settings, Models.";
+const PRICING_DESCRIPTION =
+  "The model definition that prices this model. Langfuse matches it from the model ID, the same way it prices a generation, unless you pick one when you edit the model.";
+
+/** The pricing definition's name, marked when Langfuse matched it rather than a user picking it. */
+function getPricingLabel(row: RegistryModelRow): string | undefined {
+  if (!row.pricingModel) return undefined;
+  return row.pricingModel.source === "matched"
+    ? `${row.pricingModel.modelName} (auto)`
+    : row.pricingModel.modelName;
+}
 
 const EXPERIMENT_USAGE_DESCRIPTION =
   "Experiments in the selected time range that ran on this model. An experiment counts for the registry model it started from, or for the provider and model it ran on.";
@@ -82,11 +92,12 @@ function getColumns(
       enableHiding: true,
     }),
     createTextTableColumn<RegistryModelRow>({
-      accessorFn: (row) => row.pricingModel?.modelName,
+      accessorFn: getPricingLabel,
       id: "pricing",
       header: "Pricing",
-      nullValue: "Not linked",
-      size: 140,
+      headerTooltip: { description: PRICING_DESCRIPTION },
+      nullValue: NO_PRICING_MATCH,
+      size: 220,
       enableHiding: true,
     }),
     // Only a usable model gets a badge. With a full catalogue most rows have no
@@ -106,7 +117,7 @@ function getColumns(
       header: "Last used",
       headerTooltip: { description: USAGE_DESCRIPTION },
       emptyValue: "-",
-      size: 120,
+      size: 160,
       enableHiding: true,
       getValue: (_, { row }) => {
         if (!row.original.pricingModel) return undefined;
@@ -119,7 +130,7 @@ function getColumns(
       id: "generations",
       header: "Generations",
       headerTooltip: { description: USAGE_DESCRIPTION },
-      emptyValue: NOT_LINKED_TO_PRICING,
+      emptyValue: NO_PRICING_MATCH,
       formatter: (count) => numberFormatter(count, 0),
       size: 130,
       enableHiding: true,
@@ -211,7 +222,7 @@ export function RegistryModelsTable({
           icon: SquareArrowOutUpRight,
           disabled: model.pricingModel
             ? undefined
-            : { reason: "Link a pricing model to see generations" },
+            : { reason: "No model definition matches this model" },
           onClick: () => onViewGenerations(model),
         },
         {

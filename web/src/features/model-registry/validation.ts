@@ -55,6 +55,14 @@ export const RegistryModelListInputSchema = z.object({
   limit: z.number().int().positive().max(200).default(50),
 });
 
+/** The model definition that prices a registry entry, and where the link comes from. */
+export type RegistryPricing = {
+  id: string;
+  modelName: string;
+  /** `linked` was picked by a user, `matched` is found from the model id. */
+  source: "linked" | "matched";
+};
+
 export type RegistryModelRow = {
   id: string;
   provider: string;
@@ -66,7 +74,7 @@ export type RegistryModelRow = {
   maxOutputTokens: number | null;
   capabilities: RegistryModelCapabilities;
   defaultParams: z.infer<typeof ZodModelConfig> | null;
-  pricingModel: { id: string; modelName: string } | null;
+  pricingModel: RegistryPricing | null;
   // True when an effective LLM connection for `provider` can run `modelId`.
   connectionAvailable: boolean;
   createdAt: Date;

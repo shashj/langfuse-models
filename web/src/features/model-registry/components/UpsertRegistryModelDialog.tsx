@@ -23,8 +23,8 @@ import {
 import { useDebounce } from "@/src/hooks/useDebounce";
 import { api } from "@/src/utils/api";
 
-const NO_PRICING = "none";
-const NOT_LINKED_LABEL = "Not linked";
+const AUTOMATIC_PRICING = "none";
+const AUTOMATIC_LABEL = "Automatic";
 
 const CAPABILITY_DESCRIPTIONS: Record<
   (typeof CAPABILITY_KEYS)[number],
@@ -93,7 +93,24 @@ function toFormValues(model?: RegistryModelRow): FormValues {
     jsonMode: Boolean(model?.capabilities.jsonMode),
     reasoning: Boolean(model?.capabilities.reasoning),
     ...fieldsFromDefaultParams(model?.defaultParams),
-    pricingModelId: model?.pricingModel?.id ?? NO_PRICING,
+    // An automatic match stays automatic: saving it as a link would freeze it.
+    pricingModelId:
+      model?.pricingModel?.source === "linked"
+        ? model.pricingModel.id
+        : AUTOMATIC_PRICING,
+  };
+}
+
+function getInitialPricingOption(model: RegistryModelRow | undefined) {
+  const pricing = model?.pricingModel;
+  if (pricing?.source === "linked") {
+    return { value: pricing.id, label: pricing.modelName };
+  }
+  return {
+    value: AUTOMATIC_PRICING,
+    label: pricing
+      ? `${AUTOMATIC_LABEL} (${pricing.modelName})`
+      : AUTOMATIC_LABEL,
   };
 }
 
@@ -119,17 +136,18 @@ export function UpsertRegistryModelDialog({
   const [pricingSearch, setPricingSearch] = useState("");
   const [pricingQuery, setPricingQuery] = useState("");
   const applyPricingQuery = useDebounce(setPricingQuery, 300);
-  const [selectedPricing, setSelectedPricing] = useState({
-    value: model?.pricingModel?.id ?? NO_PRICING,
-    label: model?.pricingModel?.modelName ?? NOT_LINKED_LABEL,
-  });
+  const [selectedPricing, setSelectedPricing] = useState(() =>
+    getInitialPricingOption(model),
+  );
   const pricingModels = api.models.getAll.useQuery(
     { projectId, searchString: pricingQuery, page: 0, limit: 100 },
     { refetchOnWindowFocus: false },
   );
   const pricingOptions = useMemo(
     () => [
-      ...(pricingQuery ? [] : [{ value: NO_PRICING, label: NOT_LINKED_LABEL }]),
+      ...(pricingQuery
+        ? []
+        : [{ value: AUTOMATIC_PRICING, label: AUTOMATIC_LABEL }]),
       ...(pricingModels.data?.models ?? []).map((pricing) => ({
         value: pricing.id,
         label: pricing.modelName,
@@ -173,7 +191,9 @@ export function UpsertRegistryModelDialog({
       },
       defaultParams,
       pricingModelId:
-        values.pricingModelId === NO_PRICING ? null : values.pricingModelId,
+        values.pricingModelId === AUTOMATIC_PRICING
+          ? null
+          : values.pricingModelId,
     });
   };
 
@@ -316,7 +336,7 @@ export function UpsertRegistryModelDialog({
             control={form.control}
             name="pricingModelId"
             label="Pricing"
-            description="Link to a model definition to track cost."
+            description="The model definition that prices this model. Automatic uses the one that matches the model ID, as Langfuse does for a generation. Pick one to override it."
           >
             {(field) => (
               <AsyncSelectInput<string>
