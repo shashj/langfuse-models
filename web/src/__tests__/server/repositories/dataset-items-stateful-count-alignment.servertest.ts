@@ -10,6 +10,7 @@ import { prisma } from "@langfuse/shared/src/db";
 import {
   countDatasetItemVariableMatches,
   createDatasetItemFilterState,
+  DATASET_INPUT_STATS_SAMPLE_SIZE,
   createOrgProjectAndApiKey,
   getDatasetItemInputStats,
   getDatasetItemsCount,
@@ -163,8 +164,62 @@ describe("STATEFUL getDatasetItemInputStats", () => {
       }),
     });
 
-    expect(stats.itemsWithMedia).toBe(2);
-    expect(stats.maxInputChars).toBeGreaterThanOrEqual(longText.length);
-    expect(stats.maxInputChars).toBeLessThan(1000);
+    expect(stats).toMatchObject({
+      itemsWithMedia: 2,
+      scannedItems: 4,
+      sampled: false,
+    });
+    expect(stats?.maxInputChars).toBeGreaterThanOrEqual(longText.length);
+    expect(stats?.maxInputChars).toBeLessThan(1000);
+  });
+
+  describe("on a dataset larger than the sample", () => {
+    // One item more than the sample reads, all of them with media, in one statement.
+    const setUp = async () => {
+      const { project } = await createOrgProjectAndApiKey();
+      const projectId = project.id;
+      const datasetId = v4();
+      await prisma.dataset.create({
+        data: { id: datasetId, name: v4(), projectId },
+      });
+      await prisma.$executeRaw`
+        INSERT INTO dataset_items (id, project_id, dataset_id, status, input, valid_from, is_deleted, created_at, updated_at)
+        SELECT gen_random_uuid()::text, ${projectId}, ${datasetId}, 'ACTIVE',
+               jsonb_build_object('question', repeat('lorem ipsum ', 150), 'image', 'data:image/png;base64,AAAA'),
+               now(), false, now(), now()
+        FROM generate_series(1, ${DATASET_INPUT_STATS_SAMPLE_SIZE + 1}) AS n`;
+      return {
+        projectId,
+        filterState: createDatasetItemFilterState({
+          datasetIds: [datasetId],
+          status: "ACTIVE",
+        }),
+      };
+    };
+
+    it("reads only the sample and says so", async () => {
+      const { projectId, filterState } = await setUp();
+
+      const stats = await getDatasetItemInputStats({ projectId, filterState });
+
+      expect(stats).toMatchObject({
+        scannedItems: DATASET_INPUT_STATS_SAMPLE_SIZE,
+        itemsWithMedia: DATASET_INPUT_STATS_SAMPLE_SIZE,
+        sampled: true,
+      });
+    });
+
+    it("gives up, instead of holding the database, when the statement runs too long", async () => {
+      const { projectId, filterState } = await setUp();
+
+      // 1 ms is far below what reading the sample takes.
+      const stats = await getDatasetItemInputStats({
+        projectId,
+        filterState,
+        timeoutMs: 1,
+      });
+
+      expect(stats).toBeNull();
+    });
   });
 });

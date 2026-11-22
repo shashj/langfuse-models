@@ -22,14 +22,27 @@ export function experimentCapabilityWarnings(params: {
     RegistryModelRow,
     "displayName" | "capabilities" | "contextWindow"
   >;
-  /** Facts about the dataset's inputs; undefined while they load. */
-  datasetStats?: { maxInputChars: number; itemsWithMedia: number };
+  /**
+   * Facts about the dataset's inputs; undefined while they load or when they could not be read.
+   * For a dataset larger than the sample they describe its first `scannedItems` items only.
+   */
+  datasetStats?: {
+    maxInputChars: number;
+    itemsWithMedia: number;
+    scannedItems: number;
+    sampled: boolean;
+  };
   promptHasTools: boolean;
   structuredOutputEnabled: boolean;
 }): CapabilityWarning[] {
   const { model, datasetStats, promptHasTools, structuredOutputEnabled } =
     params;
   const warnings: CapabilityWarning[] = [];
+  // A sampled dataset is described by its first items, so the wording says so instead of
+  // implying the whole dataset was read.
+  const scope = datasetStats?.sampled
+    ? `the first ${datasetStats.scannedItems.toLocaleString("en-US")} dataset items`
+    : "the dataset";
   const notMarked = (key: keyof typeof CAPABILITY_LABELS) =>
     `${model.displayName} is not marked as supporting ${CAPABILITY_LABELS[key].toLowerCase()} in the registry`;
 
@@ -40,7 +53,7 @@ export function experimentCapabilityWarnings(params: {
   ) {
     warnings.push({
       code: "vision",
-      message: `${datasetStats.itemsWithMedia} dataset ${datasetStats.itemsWithMedia === 1 ? "item contains" : "items contain"} images or media, but ${notMarked("vision")}.`,
+      message: `${datasetStats.itemsWithMedia} ${datasetStats.itemsWithMedia === 1 ? "item" : "items"} in ${scope} ${datasetStats.itemsWithMedia === 1 ? "contains" : "contain"} images or media, but ${notMarked("vision")}.`,
     });
   }
   if (promptHasTools && !model.capabilities.tools) {
@@ -62,7 +75,7 @@ export function experimentCapabilityWarnings(params: {
     if (estimatedTokens > model.contextWindow) {
       warnings.push({
         code: "contextWindow",
-        message: `The longest dataset item is about ${estimatedTokens.toLocaleString("en-US")} tokens, more than the ${model.contextWindow.toLocaleString("en-US")}-token context window of ${model.displayName}.`,
+        message: `The longest item in ${scope} is about ${estimatedTokens.toLocaleString("en-US")} tokens, more than the ${model.contextWindow.toLocaleString("en-US")}-token context window of ${model.displayName}.`,
       });
     }
   }
