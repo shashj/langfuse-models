@@ -414,4 +414,116 @@ describe("model registry tRPC router", () => {
     expect(fromEvents[entry.id].generationsInWindow).toBe(2);
     expect(fromObservations[entry.id].generationsInWindow).toBe(1);
   });
+
+  describe("experimentUsage", () => {
+    const experimentEvent = (params: {
+      projectId: string;
+      experimentId: string;
+      datasetId: string;
+      metadata: Record<string, string>;
+    }) => {
+      const spanId = randomUUID();
+      return createEvent({
+        id: spanId,
+        span_id: spanId,
+        project_id: params.projectId,
+        trace_id: randomUUID(),
+        type: "GENERATION",
+        experiment_id: params.experimentId,
+        experiment_name: `experiment-${params.experimentId}`,
+        experiment_dataset_id: params.datasetId,
+        experiment_item_id: randomUUID(),
+        experiment_item_root_span_id: spanId,
+        experiment_metadata_names: Object.keys(params.metadata),
+        experiment_metadata_values: Object.values(params.metadata),
+        start_time: Date.now() * 1000,
+      });
+    };
+
+    it("counts experiments by the stored registry id or by provider and model", async () => {
+      const { projectId, caller } = await createCaller();
+      const modelId = `model-${randomUUID()}`;
+      const byId = await caller.modelRegistry.upsert(
+        baseModel(projectId, { modelId, displayName: "By id" }),
+      );
+      const byPair = await caller.modelRegistry.upsert(
+        baseModel(projectId, { provider: "azure", displayName: "By pair" }),
+      );
+      const unused = await caller.modelRegistry.upsert(baseModel(projectId));
+      const datasetA = randomUUID();
+      const datasetB = randomUUID();
+
+      await createEventsCh([
+        // The model id was renamed after this run: only the stored id still finds the entry.
+        experimentEvent({
+          projectId,
+          experimentId: randomUUID(),
+          datasetId: datasetA,
+          metadata: {
+            provider: "openai",
+            model: "renamed-since",
+            registry_model_id: byId.id,
+          },
+        }),
+        experimentEvent({
+          projectId,
+          experimentId: randomUUID(),
+          datasetId: datasetB,
+          metadata: {
+            provider: "openai",
+            model: modelId,
+            registry_model_id: byId.id,
+          },
+        }),
+        // Started before runs stored an id.
+        experimentEvent({
+          projectId,
+          experimentId: randomUUID(),
+          datasetId: datasetA,
+          metadata: { provider: "azure", model: byPair.modelId },
+        }),
+        // Ran on a model that is not registered.
+        experimentEvent({
+          projectId,
+          experimentId: randomUUID(),
+          datasetId: datasetA,
+          metadata: { provider: "openai", model: "not-registered" },
+        }),
+      ]);
+
+      const usage = await caller.modelRegistry.experimentUsage({
+        projectId,
+        ids: [byId.id, byPair.id, unused.id],
+      });
+
+      expect(usage[byId.id]).toMatchObject({ experiments: 2, datasets: 2 });
+      expect(usage[byPair.id]).toMatchObject({ experiments: 1, datasets: 1 });
+      expect(usage[unused.id]).toEqual({
+        experiments: 0,
+        datasets: 0,
+        lastRun: null,
+      });
+    });
+
+    it("does not count another project's experiments", async () => {
+      const { projectId, caller } = await createCaller();
+      const other = await createCaller();
+      const model = await caller.modelRegistry.upsert(baseModel(projectId));
+
+      await createEventsCh([
+        experimentEvent({
+          projectId: other.projectId,
+          experimentId: randomUUID(),
+          datasetId: randomUUID(),
+          metadata: { provider: model.provider, model: model.modelId },
+        }),
+      ]);
+
+      const usage = await caller.modelRegistry.experimentUsage({
+        projectId,
+        ids: [model.id],
+      });
+      expect(usage[model.id].experiments).toBe(0);
+    });
+  });
 });
