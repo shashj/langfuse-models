@@ -328,7 +328,7 @@ describe("model registry tRPC router", () => {
     const linked = await caller.modelRegistry.upsert(
       baseModel(projectId, { pricingModelId: pricing.id }),
     );
-    const unlinked = await caller.modelRegistry.upsert(baseModel(projectId));
+    await caller.modelRegistry.upsert(baseModel(projectId));
 
     const now = Date.now();
     const day = 24 * 60 * 60 * 1000;
@@ -354,7 +354,6 @@ describe("model registry tRPC router", () => {
     const usage = await caller.modelRegistry.usage({
       ...lastDays(30),
       projectId,
-      ids: [linked.id, unlinked.id],
     });
 
     expect(Object.keys(usage)).toEqual([linked.id]);
@@ -399,7 +398,6 @@ describe("model registry tRPC router", () => {
       (
         await caller.modelRegistry.usage({
           projectId,
-          ids: [linked.id],
           ...lastDays(days),
         })
       )[linked.id];
@@ -412,7 +410,6 @@ describe("model registry tRPC router", () => {
     expect((await read(7)).generationsInWindow).toBe(1);
     const before = await caller.modelRegistry.usage({
       projectId,
-      ids: [linked.id],
       from: new Date(now - 100 * DAY_MS),
       to: new Date(now - 50 * DAY_MS),
     });
@@ -420,6 +417,56 @@ describe("model registry tRPC router", () => {
       lastUsed: null,
       generationsInWindow: 0,
     });
+  });
+
+  it("reports every entry of the project, and serves a repeated read from the cache until the registry changes", async () => {
+    const { projectId, caller } = await createCaller();
+    const pricing = await prisma.model.create({
+      data: {
+        scope: "PROJECT",
+        projectId,
+        modelName: `pricing-${randomUUID()}`,
+        matchPattern: "x",
+      },
+    });
+    const first = await caller.modelRegistry.upsert(
+      baseModel(projectId, { pricingModelId: pricing.id }),
+    );
+    const second = await caller.modelRegistry.upsert(
+      baseModel(projectId, { pricingModelId: pricing.id }),
+    );
+
+    // Whole minutes, so the cache key does not depend on when the test runs.
+    const to = new Date(Math.ceil((Date.now() + 120_000) / 60_000) * 60_000);
+    const range = { from: new Date(to.getTime() - DAY_MS), to };
+    const generation = (minutesAgo: number) =>
+      createObservation({
+        project_id: projectId,
+        internal_model_id: pricing.id,
+        start_time: Date.now() - minutesAgo * 60_000,
+      });
+    const read = async () =>
+      (await caller.modelRegistry.usage({ projectId, ...range }))[first.id];
+
+    await createObservationsCh([generation(10)]);
+    const everyEntry = await caller.modelRegistry.usage({
+      projectId,
+      ...range,
+    });
+    expect(Object.keys(everyEntry).sort()).toEqual(
+      [first.id, second.id].sort(),
+    );
+    expect(everyEntry[first.id].generationsInWindow).toBe(1);
+
+    // A generation that arrives within the cache window is not seen by the same read...
+    await createObservationsCh([generation(5)]);
+    expect((await read()).generationsInWindow).toBe(1);
+
+    // ...until the registry changes, which changes what the result depends on.
+    await caller.modelRegistry.upsert(
+      baseModel(projectId, { pricingModelId: pricing.id }),
+    );
+    expect((await read()).generationsInWindow).toBe(2);
   });
 
   it("reads usage from the events table for a v4 user and the legacy table otherwise", async () => {
@@ -471,12 +518,10 @@ describe("model registry tRPC router", () => {
     const fromEvents = await v4.caller.modelRegistry.usage({
       ...lastDays(30),
       projectId,
-      ids: [entry.id],
     });
     const fromObservations = await legacy.caller.modelRegistry.usage({
       ...lastDays(30),
       projectId,
-      ids: [entry.id],
     });
 
     expect(fromEvents[entry.id].generationsInWindow).toBe(2);
@@ -563,7 +608,6 @@ describe("model registry tRPC router", () => {
       const usage = await caller.modelRegistry.experimentUsage({
         ...lastDays(30),
         projectId,
-        ids: [byId.id, byPair.id, unused.id],
       });
 
       expect(usage[byId.id]).toMatchObject({ experiments: 2, datasets: 2 });
@@ -606,7 +650,6 @@ describe("model registry tRPC router", () => {
       const usage = await caller.modelRegistry.experimentUsage({
         ...lastDays(30),
         projectId,
-        ids: [model.id],
       });
 
       expect(usage[model.id]).toMatchObject({
@@ -641,7 +684,6 @@ describe("model registry tRPC router", () => {
         (
           await caller.modelRegistry.experimentUsage({
             projectId,
-            ids: [model.id],
             ...lastDays(days),
           })
         )[model.id].experiments;
@@ -667,7 +709,6 @@ describe("model registry tRPC router", () => {
       const usage = await caller.modelRegistry.experimentUsage({
         ...lastDays(30),
         projectId,
-        ids: [model.id],
       });
       expect(usage[model.id].experiments).toBe(0);
     });
@@ -802,7 +843,6 @@ describe("model registry tRPC router", () => {
 
       const usage = await caller.modelRegistry.usage({
         projectId,
-        ids: [base.id, dated.id],
         ...lastDays(1),
       });
       expect(usage[base.id].generationsInWindow).toBe(2);

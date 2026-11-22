@@ -63,17 +63,15 @@ export default function ModelRegistryPage() {
     { enabled: Boolean(projectId), refetchOnWindowFocus: false },
   );
 
-  const registryIds = models.data?.models.map((model) => model.id) ?? [];
+  // The usage queries cover the whole registry, so paging the table does not read them again.
   const usage = api.modelRegistry.usage.useQuery(
     {
       projectId,
-      ids: registryIds,
       from: usageRange?.from as Date,
       to: usageRange?.to as Date,
     },
     {
-      enabled:
-        models.isSuccess && registryIds.length > 0 && Boolean(usageRange),
+      enabled: Boolean(projectId && usageRange),
       refetchOnWindowFocus: false,
       staleTime: 1000 * 60 * 5,
     },
@@ -83,16 +81,11 @@ export default function ModelRegistryPage() {
   const experimentUsage = api.modelRegistry.experimentUsage.useQuery(
     {
       projectId,
-      ids: registryIds,
       from: usageRange?.from as Date,
       to: usageRange?.to as Date,
     },
     {
-      enabled:
-        isV4 &&
-        models.isSuccess &&
-        registryIds.length > 0 &&
-        Boolean(usageRange),
+      enabled: isV4 && Boolean(projectId && usageRange),
       refetchOnWindowFocus: false,
       staleTime: 1000 * 60 * 5,
     },

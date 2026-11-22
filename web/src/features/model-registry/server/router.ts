@@ -354,14 +354,13 @@ export const modelRegistryRouter = createTRPCRouter({
     }),
 
   /**
-   * Generation usage for registry entries, joined through their pricing link.
-   * Entries without a pricing link are absent from the result.
+   * Generation usage of every registry entry of the project in a time range, joined through its
+   * pricing definition. Entries without a definition are absent from the result.
    */
   usage: protectedProjectProcedure
     .input(
       z.object({
         projectId: z.string(),
-        ids: z.array(z.string()).max(200),
         from: z.date(),
         to: z.date(),
       }),
@@ -373,7 +372,6 @@ export const modelRegistryRouter = createTRPCRouter({
       });
       return getRegistryModelUsage({
         projectId: input.projectId,
-        registryModelIds: input.ids,
         from: input.from,
         to: input.to,
         source: ctx.session.user?.v4BetaEnabled ? "events" : "observations",
@@ -381,14 +379,13 @@ export const modelRegistryRouter = createTRPCRouter({
     }),
 
   /**
-   * Experiments and datasets per registry entry in a time range, matched by the registry id an
-   * experiment stored or by its provider and model.
+   * Experiments and datasets of every registry entry of the project in a time range, matched by
+   * the registry id an experiment stored or by its provider and model.
    */
   experimentUsage: protectedProjectProcedure
     .input(
       z.object({
         projectId: z.string(),
-        ids: z.array(z.string()).max(200),
         from: z.date(),
         to: z.date(),
       }),
@@ -405,7 +402,6 @@ export const modelRegistryRouter = createTRPCRouter({
       });
       return getRegistryExperimentUsage({
         projectId: input.projectId,
-        registryModelIds: input.ids,
         from: input.from,
         to: input.to,
       });
