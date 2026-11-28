@@ -6,6 +6,35 @@ import { DEFAULT_TOPIC_FACETS } from "./default-facets";
 
 export { DEFAULT_TOPIC_FACETS };
 
+const BUILT_IN_FACET_ORDER = new Map<string, number>(
+  DEFAULT_TOPIC_FACETS.map((facet, index) => [facet.name, index]),
+);
+
+function facetRank(facet: { name: string; isBuiltIn: boolean }) {
+  if (!facet.isBuiltIn) return BUILT_IN_FACET_ORDER.size + 1;
+  return BUILT_IN_FACET_ORDER.get(facet.name) ?? BUILT_IN_FACET_ORDER.size;
+}
+
+/** Built-in presets in `DEFAULT_TOPIC_FACETS` order first; other facets keep their existing order. */
+export function sortTopicFacets<T extends { name: string; isBuiltIn: boolean }>(
+  facets: readonly T[],
+): T[] {
+  return [...facets].sort((a, b) => facetRank(a) - facetRank(b));
+}
+
+/** Orders `{ facetId }` items to match `facets`, keeping unknown IDs last. */
+export function orderByFacetIds<T extends { facetId: string }>(
+  items: readonly T[],
+  facets: readonly { id: string }[],
+): T[] {
+  const rank = new Map(facets.map((facet, index) => [facet.id, index]));
+  return [...items].sort(
+    (a, b) =>
+      (rank.get(a.facetId) ?? facets.length) -
+      (rank.get(b.facetId) ?? facets.length),
+  );
+}
+
 /** Tracing filter column: key is the facet name, values are topic names. */
 const TOPIC_FILTER_COLUMN = "topics";
 
@@ -99,7 +128,6 @@ export const topicsModelSettingsSchema = z.object({
 });
 export type TopicsModelSettings = z.infer<typeof topicsModelSettingsSchema>;
 export const topicProcessingConfigSchema = z.object({
-  maxInputTokens: z.number().int().min(256).max(120_000).default(120_000),
   maxOutputTokens: z.number().int().min(64).max(512).default(512),
 });
 export type TopicProcessingConfig = z.infer<typeof topicProcessingConfigSchema>;
@@ -305,10 +333,25 @@ export type TopicFacetOutcome =
   | "no_applicable_summaries"
   | "no_topics"
   | "failed";
-export type TopicSummaryState =
-  | "complete"
-  | "not_applicable"
-  | "insufficient_input";
+export const TOPIC_SUMMARY_STATES = [
+  "complete",
+  "not_applicable",
+  "insufficient_input",
+  /** Written without a model call: the transcript has nothing for the model. */
+  "empty_input",
+  /** Written without a model call: the rendered text exceeds the Topics input limit (`LANGFUSE_TOPICS_MAX_INPUT_CHARACTERS`). */
+  "input_too_large",
+] as const;
+export type TopicSummaryState = (typeof TOPIC_SUMMARY_STATES)[number];
+
+/** Execution progress counts collapse summaries written without a model call into `insufficient_input`. */
+export function reportedTopicSummaryState(
+  state: TopicSummaryState,
+): "complete" | "not_applicable" | "insufficient_input" {
+  return state === "empty_input" || state === "input_too_large"
+    ? "insufficient_input"
+    : state;
+}
 
 export interface TopicFacetVersion {
   projectId: string;
@@ -359,7 +402,7 @@ export type TopicSummary = z.infer<typeof topicSourceSchema> & {
   usageDetails: Record<string, number>;
   providedCostDetails: Record<string, number>;
   costDetails: Record<string, number>;
-  processedAt: string;
+  createdAt: string;
   metadata: Record<string, unknown>;
 };
 
@@ -380,13 +423,15 @@ export type TopicAssignment = z.infer<typeof topicSourceSchema> & {
   distance: number | null;
   runnerUpDistance: number | null;
   origin: "initial" | "online";
-  assignedAt: string;
+  createdAt: string;
 };
 export interface TopicDefinition {
   topicVersionId: string;
   projectId: string;
   topicId: string;
   createdByRunId: string;
+  /** Naming costs for this version. Absent or empty when no price was available. */
+  costDetails?: Record<string, number>;
   createdAt: string;
   labels: string[];
   name: string;
@@ -470,3 +515,5 @@ export interface TopicExecution {
 export type TopicExecutionSummary = Omit<TopicExecution, "input"> & {
   input: TopicManualRunInput | TopicExecutionInput;
 };
+
+export * from "./cost-estimate";

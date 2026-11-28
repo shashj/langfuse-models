@@ -59,6 +59,7 @@ const ChatMessageBaseSchema = z.object({
  * or a placeholder reference ({type: 'placeholder', name}) that is replaced
  * with a runtime variable value when the prompt is compiled. A strict union is
  * only used at runtime — the base schema stays union-free for JSON Schema.
+ * @internal
  */
 export const ChatMessageSchema = PromptChatMessageSchema;
 
@@ -207,5 +208,5 @@ export const [createChatPromptTool, handleCreateChatPrompt] = defineTool({
       },
     });
   },
-  destructiveHint: true,
+  annotations: { destructiveHint: true },
 });
