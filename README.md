@@ -59,6 +59,25 @@
   <a href="./README.kr.md"><img alt="README in Korean" src="https://img.shields.io/badge/한국어-d9d9d9"></a>
 </p>
 
+## 🍴 About this fork
+
+This is a fork of [langfuse/langfuse](https://github.com/langfuse/langfuse) that adds **models functionality** to Langfuse. Everything else is upstream Langfuse, and the fork is synced with upstream `main` periodically.
+
+**Why.** In Langfuse, models are second-class citizens. A model is a name on a generation and a pricing definition used to infer cost. Nothing tells you which models your team uses, and prompts, experiments and evaluators have no shared notion of a model. This fork makes models first-class.
+
+**What the fork adds.**
+
+- **Model registry.** A per-project list of the models you use: provider (the LLM connection), model ID, status, context window, capabilities and default parameters. See the [model registry docs](https://github.com/shashj/langfuse-docs/blob/main/content/docs/prompt-management/features/model-registry.mdx).
+- **Models on prompts, experiments and evaluators.** A prompt version names its registry model. Experiments run from the registry, and evaluators pick their judge model from it.
+- **Usage per model.** The Models page shows last used, generations, experiments and datasets per model for a time range, with links to the matching generations and experiments.
+- **Automatic pricing.** A registry model is priced by the model definition Langfuse already matches to its model ID, with an explicit override.
+- **Capability warnings.** Experiments warn, without blocking, when a model is not marked as supporting what the prompt or dataset needs (vision, tool calling, JSON mode, context window).
+- **Public API.** Registry models are available under `/api/public/registry-models`.
+
+**To do.**
+
+- **Production monitoring of LLM applications.** Langfuse still does not have functions to monitor production effectively in one shot. Closing that gap is the next goal of this fork.
+
 Langfuse is an **open source AI engineering platform** for **agent evals and observability**. It is one open platform for every AI call your company makes and every agent your teams build: track usage and costs, **trace and evaluate** agents, and use production data to ship better AI. Use Langfuse Cloud or **self-host in minutes**; Langfuse is **battle-tested** at scale.
 
 Watch a quick demo of the project here:
