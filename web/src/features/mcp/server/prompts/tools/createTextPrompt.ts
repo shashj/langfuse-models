@@ -158,5 +158,5 @@ export const [createTextPromptTool, handleCreateTextPrompt] = defineTool({
       },
     });
   },
-  destructiveHint: true,
+  annotations: { destructiveHint: true },
 });

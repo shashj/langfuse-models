@@ -1,8 +1,8 @@
 import { Beaker, Pencil, SquareArrowOutUpRight, Trash } from "@langfuse/icons";
 import {
-  SettingsTable,
-  type SettingsTableProps,
-} from "@/src/components/SettingsTable/SettingsTable";
+  TableCard,
+  type TableCardProps,
+} from "@/src/components/TableCard/TableCard";
 import { type PaginationBarProps } from "@/src/components/design-system/PaginationBar/PaginationBar";
 import { type TableProps } from "@/src/components/design-system/table/Table";
 import { createBadgeTableColumn } from "@/src/components/design-system/table/columns/createBadgeTableColumn";
@@ -193,7 +193,7 @@ export function RegistryModelsTable({
   canViewExperiments: boolean;
   pagination: PaginationBarProps;
   search: { value: string; onChange: (value: string) => void };
-  toolbarActions?: SettingsTableProps<RegistryModelRow>["toolbarActions"];
+  toolbarActions?: TableCardProps<RegistryModelRow>["toolbarActions"];
   canEdit: boolean;
   onEdit: (model: RegistryModelRow) => void;
   onDelete: (model: RegistryModelRow) => void;
@@ -203,7 +203,7 @@ export function RegistryModelsTable({
   const noAccess = { reason: "You do not have permission to change models" };
 
   return (
-    <SettingsTable
+    <TableCard
       tableName="modelRegistry"
       columns={getColumns(usage, experimentUsage)}
       columnVisibilityKey="modelRegistryColumnVisibility"

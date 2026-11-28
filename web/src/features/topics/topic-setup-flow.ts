@@ -3,15 +3,16 @@ import {
   supportedModels,
   type FilterState,
 } from "@langfuse/shared";
-import { DEFAULT_TOPIC_FACETS } from "@langfuse/shared/topics";
+import {
+  DEFAULT_TOPIC_FACETS,
+  DEFAULT_TOPIC_RULE_NAME,
+} from "@langfuse/shared/topics";
 import { type JudgeModel } from "@/src/features/evals/v2/judgeModel";
 
-export const TOPIC_SETUP_QUESTIONS = [
-  { name: "Intent" },
-  { name: "Sentiment" },
-  { name: "Outcome" },
-  { name: "Issues" },
-] as const;
+/** @knipignore Keeps the setup dialog stories in sync with the production question sequence. */
+export const TOPIC_SETUP_QUESTIONS = DEFAULT_TOPIC_FACETS.map(({ name }) => ({
+  name,
+}));
 
 export const TOPIC_SETUP_WAIT_MINUTES = [2, 5, 10] as const;
 const TOPIC_SETUP_DEFAULT_WAIT_MINUTES = 5;
@@ -34,6 +35,7 @@ export type TopicSetupConnection = {
   adapter: string;
   customModels: string[];
   withDefaultModels: boolean;
+  baseURL: string | null;
 };
 
 export type TopicSetupDraft = {
@@ -47,7 +49,33 @@ export type TopicSetupDraft = {
   samplePercent: number;
   /** Observation filter of the first rule; empty means every trace. */
   filter: FilterState;
+  /** Name typed for the map; null follows `defaultTopicMapName` of the filter. */
+  name: string | null;
 };
+
+const TOPIC_MAP_NAME_MAX_LENGTH = 100;
+
+/** The trace names an exact trace-name filter selects, else the default map name. */
+/** @internal */
+export function defaultTopicMapName(filter: FilterState) {
+  const names = filter.flatMap((item) => {
+    if (item.column !== "traceName") return [];
+    if (item.type === "string" && item.operator === "=") return [item.value];
+    if (item.type === "stringOptions" && item.operator === "any of")
+      return item.value;
+    return [];
+  });
+  const name = names
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .join(", ")
+    .slice(0, TOPIC_MAP_NAME_MAX_LENGTH);
+  return name || DEFAULT_TOPIC_RULE_NAME;
+}
+
+export function topicSetupMapName(draft: TopicSetupDraft) {
+  return draft.name ?? defaultTopicMapName(draft.filter);
+}
 
 // Best family first; within a family the highest version wins (6.1 over 6).
 const RECOMMENDED_MODELS: Record<
@@ -64,10 +92,13 @@ const OPENAI_EMBEDDING_MODELS = [
   "text-embedding-3-large",
   "text-embedding-ada-002",
 ];
-const GOOGLE_EMBEDDING_MODELS = [
-  "textembedding-gecko",
-  "textembedding-gecko-multilingual",
+// gecko is retired; these batch the several texts setup embeds per request.
+// Vertex serves gemini-embedding-2 only on global/multi-region endpoints.
+const GOOGLE_AI_STUDIO_EMBEDDING_MODELS = [
+  "gemini-embedding-001",
+  "gemini-embedding-2",
 ];
+const VERTEX_AI_EMBEDDING_MODELS = ["gemini-embedding-001"];
 
 export function isRecommendedTopicModel(
   slot: "summary" | "embedding" | "clustering",
@@ -87,6 +118,7 @@ export function topicConnectionCaption(
   return "Project connections";
 }
 
+/** @internal */
 export function setupWaitMinutes(
   traceIdleMs: number | null,
 ): TopicSetupWaitMinutes {
@@ -96,42 +128,64 @@ export function setupWaitMinutes(
   return TOPIC_SETUP_DEFAULT_WAIT_MINUTES;
 }
 
-function topicModelsFor(
+export function topicModelsFor(
   connection: TopicSetupConnection,
   kind: "chat" | "embedding",
   savedModel?: string | null,
 ) {
-  const chat = connection.withDefaultModels
-    ? (supportedModels[connection.adapter as keyof typeof supportedModels] ??
-      [])
-    : [];
+  // These adapters have no embeddings API.
+  if (
+    kind === "embedding" &&
+    (connection.adapter === LLMAdapter.Anthropic ||
+      connection.adapter === LLMAdapter.TypeSafe)
+  )
+    return [];
+  // The built-in chat lists never embed; custom models may, whatever their name.
+  const chat =
+    kind === "chat" && connection.withDefaultModels
+      ? (supportedModels[connection.adapter as keyof typeof supportedModels] ??
+        [])
+      : [];
   const embedding =
     kind === "embedding" && connection.withDefaultModels
-      ? embeddingModelsFor(connection.adapter)
+      ? embeddingModelsFor(connection)
       : [];
-  return Array.from(
+  const models = Array.from(
     new Set(
       [savedModel, ...embedding, ...connection.customModels, ...chat].filter(
         (model): model is string => Boolean(model),
       ),
     ),
   );
+  if (kind === "chat") return models;
+  const isEmbedding = (model: string) => /embed/i.test(model);
+  return [
+    ...models.filter(isEmbedding),
+    ...models.filter((m) => !isEmbedding(m)),
+  ];
 }
 
 export function topicProviderGroups(
   connections: TopicSetupConnection[],
   kind: "chat" | "embedding",
-  savedModel?: string | null,
+  saved?: JudgeModel | null,
 ) {
-  return connections.map(
-    (connection) =>
-      [connection.provider, topicModelsFor(connection, kind, savedModel)] as [
-        string,
-        string[],
-      ],
-  );
+  return connections
+    .map(
+      (connection) =>
+        [
+          connection.provider,
+          topicModelsFor(
+            connection,
+            kind,
+            saved?.provider === connection.provider ? saved.model : null,
+          ),
+        ] as [string, string[]],
+    )
+    .filter(([, models]) => models.length > 0);
 }
 
+/** @internal */
 export function pickRecommendedTopicModel(
   slot: "summary" | "embedding" | "clustering",
   providerGroups: Array<[string, string[]]>,
@@ -194,22 +248,24 @@ export function initialTopicSetupDraft(input: {
   enabledFacetIds: ReadonlySet<string> | null;
   /** The first rule's stored filter, when the project has one. */
   filter?: FilterState;
+  /** The first rule's stored name, when the project has one. */
+  name?: string;
   traceIdleMs: number | null;
 }): TopicSetupDraft {
   const summaryGroups = topicProviderGroups(
     input.connections,
     "chat",
-    input.stored.summary?.model,
+    input.stored.summary,
   );
   const embeddingGroups = topicProviderGroups(
     input.connections,
     "embedding",
-    input.stored.embedding?.model,
+    input.stored.embedding,
   );
   const clusteringGroups = topicProviderGroups(
     input.connections,
     "chat",
-    input.stored.clustering?.model,
+    input.stored.clustering,
   );
   return {
     step: "questions",
@@ -241,6 +297,8 @@ export function initialTopicSetupDraft(input: {
     advancedOpen: false,
     samplePercent: 100,
     filter: input.filter ?? [],
+    name:
+      input.name && input.name !== DEFAULT_TOPIC_RULE_NAME ? input.name : null,
   };
 }
 
@@ -338,10 +396,18 @@ function topicQuestionDescription(name: string, stored: string | undefined) {
   );
 }
 
-function embeddingModelsFor(adapter: string) {
-  if (adapter === LLMAdapter.OpenAI || adapter === LLMAdapter.Azure)
-    return OPENAI_EMBEDDING_MODELS;
-  if (adapter === LLMAdapter.GoogleAIStudio || adapter === LLMAdapter.VertexAI)
-    return GOOGLE_EMBEDDING_MODELS;
+function embeddingModelsFor({ adapter, baseURL }: TopicSetupConnection) {
+  // OpenAI and its data-residency hosts; compatible hosts and Azure deployments name models themselves.
+  if (adapter === LLMAdapter.OpenAI)
+    return !baseURL ||
+      (URL.canParse(baseURL) &&
+        /(^|\.)api\.openai\.com$/.test(
+          new URL(baseURL).hostname.replace(/\.$/, ""),
+        ))
+      ? OPENAI_EMBEDDING_MODELS
+      : [];
+  if (adapter === LLMAdapter.GoogleAIStudio)
+    return GOOGLE_AI_STUDIO_EMBEDDING_MODELS;
+  if (adapter === LLMAdapter.VertexAI) return VERTEX_AI_EMBEDDING_MODELS;
   return [];
 }

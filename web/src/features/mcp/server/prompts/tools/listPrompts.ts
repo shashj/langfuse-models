@@ -153,5 +153,5 @@ export const [listPromptsTool, handleListPrompts] = defineTool({
       },
     });
   },
-  readOnlyHint: true,
+  annotations: { readOnlyHint: true },
 });
